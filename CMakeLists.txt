@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.19)
+project(BadJVM)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_FLAGS "-O0 -g")
+#set(CMAKE_CXX_FLAGS "-O3 -march=native -flto")
+
+add_executable(BadJVM src/main.cpp src/class_file/class_file.cpp src/class_file/class_file.h src/utils/utils.h src/utils/read_binary.cpp src/utils/read_binary.h src/class_file/cp_info.cpp src/class_file/cp_info.h src/class_file/access_flags.h src/class_file/field_info.cpp src/class_file/field_info.h src/class_file/method_info.cpp src/class_file/method_info.h src/class_file/attribute_info.cpp src/class_file/attribute_info.h src/class_file/code_attribute_info.cpp src/class_file/code_attribute_info.h src/utils/constant_pool_utils.cpp src/utils/constant_pool_utils.h src/interpreter/interpreter.cpp src/interpreter/opcodes.h src/interpreter/jvm_value.cpp src/interpreter/jvm_value.h src/vm/vm.cpp src/vm/vm.h src/interpreter/method_descriptor.cpp src/interpreter/method_descriptor.h src/vm/heap_manager.cpp src/vm/heap_manager.h src/vm/object_intrinsics.cpp src/vm/object_intrinsics.h src/vm/jvm_defines.h src/compiler/jit_compiler.cpp src/compiler/jit_compiler.h)
