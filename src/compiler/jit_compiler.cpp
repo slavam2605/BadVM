@@ -143,7 +143,12 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
                 ir.bin_op(var, ir_value(param), var, ir_bin_op::add);
                 break;
             }
-            case op_if_icmpge: {
+            case op_if_icmpeq:
+            case op_if_icmpne:
+            case op_if_icmplt:
+            case op_if_icmpge:
+            case op_if_icmpgt:
+            case op_if_icmple: {
                 uint8_t branchbyte1 = code[offset + 1];
                 uint8_t branchbyte2 = code[offset + 2];
                 int16_t bytecode_offset = (branchbyte1 << 8) | branchbyte2;
@@ -158,7 +163,17 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
                 } else {
                     pending_labels.insert_or_assign(target_offset, label_true);
                 }
-                ir.cmp_jump(var1, var2, ir_cmp_mode::ge, label_true, label_false);
+                ir_cmp_mode cmp_mode;
+                switch (code[offset]) {
+                    case op_if_icmpeq: cmp_mode = ir_cmp_mode::eq; break;
+                    case op_if_icmpne: cmp_mode = ir_cmp_mode::neq; break;
+                    case op_if_icmplt: cmp_mode = ir_cmp_mode::lt; break;
+                    case op_if_icmpge: cmp_mode = ir_cmp_mode::ge; break;
+                    case op_if_icmpgt: cmp_mode = ir_cmp_mode::gt; break;
+                    case op_if_icmple: cmp_mode = ir_cmp_mode::le; break;
+                    default: assert(false)
+                }
+                ir.cmp_jump(var1, var2, cmp_mode, label_true, label_false);
                 ir.add_label(label_false, ir.ir_offset());
                 offset += 2;
                 break;

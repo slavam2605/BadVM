@@ -296,23 +296,19 @@ const uint8_t* ir_compiler::compile_ssa() {
                     } else {
                         assert(false);
                     }
-
                     switch (instruction->mode) {
-                        case ir_cmp_mode::eq: assert(false)
-                        case ir_cmp_mode::neq: assert(false)
-                        case ir_cmp_mode::lt: assert(false)
-                        case ir_cmp_mode::le: assert(false)
-                        case ir_cmp_mode::gt: assert(false)
-                        case ir_cmp_mode::ge: {
-                            builder.jge(instruction->label_true.id);
-                            // TODO insert a new block with phi's impl
-                            assert(block_map[instruction->label_true]->ir[0]->tag != ir_instruction_tag::phi)
-                            compile_phi_before_jump(block.label, block_map[instruction->label_false]);
-                            if (i >= blocks.size() - 1 || blocks[i + 1].label != instruction->label_false) {
-                                builder.jmp(instruction->label_false.id);
-                            }
-                            break;
-                        }
+                        case ir_cmp_mode::eq: builder.je(instruction->label_true.id); break;
+                        case ir_cmp_mode::neq: builder.jne(instruction->label_true.id); break;
+                        case ir_cmp_mode::lt: builder.jl(instruction->label_true.id); break;
+                        case ir_cmp_mode::le: builder.jle(instruction->label_true.id); break;
+                        case ir_cmp_mode::gt: builder.jg(instruction->label_true.id); break;
+                        case ir_cmp_mode::ge: builder.jge(instruction->label_true.id); break;
+                    }
+                    // TODO insert a new block with phi's impl
+                    assert(block_map[instruction->label_true]->ir[0]->tag != ir_instruction_tag::phi)
+                    compile_phi_before_jump(block.label, block_map[instruction->label_false]);
+                    if (i >= blocks.size() - 1 || blocks[i + 1].label != instruction->label_false) {
+                        builder.jmp(instruction->label_false.id);
                     }
                     break;
                 }

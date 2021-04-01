@@ -198,12 +198,41 @@ void code_builder::cmp(jit_value_location first, jit_value_location second) {
     code.push_back(mod_rm);
 }
 
-void code_builder::jge(int label_id) {
-    log(cout << "    jge L" << label_id << endl;)
+void code_builder::jcc32(uint8_t opcode, int label_id) {
     code.push_back(0x0F);
-    code.push_back(0x8D);
+    code.push_back(opcode);
     push_imm32(0);
     fix_list.emplace_back(current_offset() - 4, current_offset(), label_id);
+}
+
+void code_builder::je(int label_id) {
+    log(cout << "    je L" << label_id << endl;)
+    jcc32(0x84, label_id);
+}
+
+void code_builder::jne(int label_id) {
+    log(cout << "    jne L" << label_id << endl;)
+    jcc32(0x85, label_id);
+}
+
+void code_builder::jl(int label_id) {
+    log(cout << "    jl L" << label_id << endl;)
+    jcc32(0x8C, label_id);
+}
+
+void code_builder::jle(int label_id) {
+    log(cout << "    jle L" << label_id << endl;)
+    jcc32(0x8E, label_id);
+}
+
+void code_builder::jg(int label_id) {
+    log(cout << "    jg L" << label_id << endl;)
+    jcc32(0x8F, label_id);
+}
+
+void code_builder::jge(int label_id) {
+    log(cout << "    jge L" << label_id << endl;)
+    jcc32(0x8D, label_id);
 }
 
 void code_builder::jmp(int label_id) {

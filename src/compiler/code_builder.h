@@ -46,6 +46,7 @@ class code_builder {
     void push_imm32(uint32_t value);
     void push_imm64(uint64_t value);
     void write_imm32(int offset, uint32_t value);
+    void jcc32(uint8_t opcode, int label_id);
 public:
     const std::vector<uint8_t>& get_code() const;
     int current_offset() const;
@@ -58,6 +59,11 @@ public:
     void add(int32_t from, jit_value_location to);
     void sub(jit_value_location from, jit_value_location to);
     void cmp(jit_value_location first, jit_value_location second);
+    void je(int label_id);
+    void jne(int label_id);
+    void jl(int label_id);
+    void jle(int label_id);
+    void jg(int label_id);
     void jge(int label_id);
     void jmp(int label_id);
     void ret();
