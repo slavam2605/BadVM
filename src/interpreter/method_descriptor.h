@@ -16,6 +16,7 @@ struct field_descriptor {
 
     base_type_descriptor get_base_type() const;
     uint8_t get_field_size() const;
+    bool is_int_value() const;
 
     static field_descriptor parse(const std::string& source);
     static field_descriptor parse(const std::string& source, int& pos);

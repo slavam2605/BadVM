@@ -24,10 +24,10 @@ void vm::start(const std::string& class_name) {
 
         auto method_name = read_utf8_string(main_class, method.name_index);
         if (method_name == /*TODO "main"*/"foo") {
-            auto info = reinterpret_cast<code_attribute_info*>(method.attributes[0].info);
             vector<jvm_value> main_arguments;
-//            main_arguments.push_back(jvm_value::as_reference(0)); TODO add null for main method
-            cout << interpret(main_class, info, move(main_arguments)).int_value << endl;
+//            main_arguments.push_back(jvm_value::as_reference(0)); TODO bin_op null for main method
+            compile_and_invoke(main_class, method, move(main_arguments));
+//            cout << interpret(main_class, info, move(main_arguments)).int_value << endl;
             return;
         }
     }
@@ -39,7 +39,7 @@ class_file* vm::get_or_load_class(const string& name) {
         class_file* loaded_class = class_file::read(this, name);
         loaded_classes[name] = loaded_class;
 
-        // find and invoke <clinit> for a new class
+        // find and compile_and_invoke <clinit> for a new class
         for (const auto& method : loaded_class->methods) {
             auto method_name = read_utf8_string(loaded_class, method.name_index);
             if (method_name != "<clinit>")
@@ -47,7 +47,7 @@ class_file* vm::get_or_load_class(const string& name) {
 
             for (const auto& attribute : method.attributes) {
                 const auto& attribute_name = read_utf8_string(loaded_class, attribute.attribute_name_index);
-                if (attribute_name != "Code")
+                if (attribute_name != ai_code)
                     continue;
 
                 const auto* code_info = reinterpret_cast<code_attribute_info*>(attribute.info);
@@ -100,14 +100,14 @@ pair<const class_file*, const code_attribute_info*> vm::get_code_info(class_file
 
             for (const auto& attribute : method.attributes) {
                 const auto& attribute_name = read_utf8_string(some_class, attribute.attribute_name_index);
-                if (attribute_name != "Code")
+                if (attribute_name != ai_code)
                     continue;
 
                 const auto* code_info = reinterpret_cast<code_attribute_info*>(attribute.info);
                 return make_pair(some_class, code_info);
             }
             // TODO implement natives
-            cerr << "Failed to find a Code attribute for a method " << some_class->class_name << "." << method_name << ": " << method_descriptor << endl;
+//            cerr << "Failed to find a Code attribute for a method " << some_class->class_name << "." << method_name << ": " << method_descriptor << endl;
             return make_pair(some_class, nullptr);
 //            throw runtime_error("Failed to find a Code attribute for a method " + method_name + ": " + method_descriptor);
         }
@@ -135,10 +135,33 @@ ifstream vm::open_class_file(const string& class_name) {
         if (!result.is_open())
             continue;
 
-        cout << "Loading class " << class_name << endl;
+//        cout << "Loading class " << class_name << endl;
         return result;
     }
     throw runtime_error("Failed to load class " + class_name);
+}
+
+const code_attribute_info* vm::get_code_info(const class_file* current_class, const method_info& method) {
+    for (const auto& attribute : method.attributes) {
+        auto attribute_name = read_utf8_string(current_class, attribute.attribute_name_index);
+        if (attribute_name != ai_code)
+            continue;
+
+        return reinterpret_cast<code_attribute_info*>(attribute.info);
+    }
+    throw runtime_error("Failed to find Code attribute");
+}
+
+void vm::compile_and_invoke(const class_file* current_class, const method_info& method, const vector<jvm_value>&& parameters) {
+    if (false) {
+        cout << interpret(current_class, method, move(parameters)).int_value << endl;
+    } else {
+        auto code_info = get_code_info(current_class, method);
+        auto compiled_fun = compiler.compile(current_class, method, code_info);
+        auto fun_ptr = reinterpret_cast<int32_t (*)()>(const_cast<void*>(compiled_fun));
+        auto result = fun_ptr();
+        cout << result << endl;
+    }
 }
 
 

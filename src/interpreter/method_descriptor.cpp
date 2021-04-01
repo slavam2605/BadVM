@@ -85,3 +85,18 @@ uint8_t field_descriptor::get_field_size() const {
         default: return sizeof(jvm_reference);
     }
 }
+
+bool field_descriptor::is_int_value() const {
+    switch (base_type) {
+        case 'Z':
+        case 'B':
+        case 'C':
+        case 'S':
+        case 'I':
+        case 'J':
+        default: return true;
+
+        case 'D':
+        case 'F': return false;
+    }
+}

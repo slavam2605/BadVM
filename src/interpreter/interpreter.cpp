@@ -70,6 +70,11 @@ using namespace std;
         break; \
     }
 
+jvm_value vm::interpret(const class_file* current_class, const method_info& method, const std::vector<jvm_value>&& parameters) {
+    auto code_info = get_code_info(current_class, method);
+    return interpret(current_class, code_info, move(parameters));
+}
+
 jvm_value vm::interpret(const class_file* current_class, const code_attribute_info* code_info, const std::vector<jvm_value>&& parameters) {
     vector<jvm_value> stack;
     vector<jvm_value> locals;
@@ -385,22 +390,7 @@ jvm_value vm::interpret(const class_file* current_class, const code_attribute_in
             case op_if_icmplt: int_cmp_op(<)
             case op_if_icmple: int_cmp_op(<=)
             case op_if_icmpgt: int_cmp_op(>)
-            case op_if_icmpge: /*int_cmp_op(>=)*/{
-                uint8_t branchbyte1=code[offset+1];
-                uint8_t branchbyte2=code[offset+2];
-                int16_t branchoffset=(branchbyte1<<8)|branchbyte2;
-                auto op2=stack.back();
-                stack.pop_back();
-                auto op1=stack.back();
-                stack.pop_back();
-                if (op1.int_value>=op2.int_value){
-                    offset += branchoffset;
-                    goto skip_offset_increment;
-                } else {
-                    offset += 2;
-                }
-                break;
-            }
+            case op_if_icmpge: int_cmp_op(>=)
             case op_goto: {
                 uint8_t branchbyte1 = code[offset + 1];
                 uint8_t branchbyte2 = code[offset + 2];
