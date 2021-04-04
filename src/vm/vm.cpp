@@ -3,6 +3,7 @@
 #include "../utils/constant_pool_utils.h"
 #include "../utils/utils.h"
 #include "../class_file/access_flags.h"
+#include <chrono>
 
 using namespace std;
 
@@ -159,8 +160,14 @@ void vm::compile_and_invoke(const class_file* current_class, const method_info& 
         auto code_info = get_code_info(current_class, method);
         auto compiled_fun = compiler.compile(current_class, method, code_info);
         auto fun_ptr = reinterpret_cast<int32_t (*)()>(const_cast<void*>(compiled_fun));
+
+        auto start = chrono::system_clock::now();
         auto result = fun_ptr();
+        auto end = chrono::system_clock::now();
+        auto duration = chrono::duration_cast<chrono::milliseconds>(end - start);
+
         cout << result << endl;
+        cout << "Time: " << duration.count() << " ms" << endl;
     }
 }
 

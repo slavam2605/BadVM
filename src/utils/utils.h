@@ -16,4 +16,6 @@
         throw std::runtime_error(ss.str()); \
     }
 
+#define default_fail default: assert(false)
+
 #endif //BADJVM_UTILS_H

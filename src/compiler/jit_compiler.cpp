@@ -96,12 +96,12 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
             }
             case op_bipush: {
                 read_byte1(value)
-                ir.assign(ir_value(value), allocate_stack(locals_count, stack_size));
+                ir.assign(ir_value((int8_t) value), allocate_stack(locals_count, stack_size));
                 break;
             }
             case op_sipush: {
                 read_byte2(value)
-                ir.assign(ir_value(value), allocate_stack(locals_count, stack_size));
+                ir.assign(ir_value((int16_t) value), allocate_stack(locals_count, stack_size));
                 break;
             }
             case op_iload: {
@@ -122,18 +122,20 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
             case op_istore_1: ir.assign(pop_stack(locals_count, stack_size), get_local(1)); break;
             case op_istore_2: ir.assign(pop_stack(locals_count, stack_size), get_local(2)); break;
             case op_istore_3: ir.assign(pop_stack(locals_count, stack_size), get_local(3)); break;
-            case op_iadd: {
+            case op_iadd:
+            case op_isub:
+            case op_imul: {
                 auto var2 = pop_stack(locals_count, stack_size);
                 auto var1 = pop_stack(locals_count, stack_size);
                 auto result = allocate_stack(locals_count, stack_size);
-                ir.bin_op(var1, var2, result, ir_bin_op::add);
-                break;
-            }
-            case op_isub: {
-                auto var2 = pop_stack(locals_count, stack_size);
-                auto var1 = pop_stack(locals_count, stack_size);
-                auto result = allocate_stack(locals_count, stack_size);
-                ir.bin_op(var1, var2, result, ir_bin_op::sub);
+                ir_bin_op op;
+                switch (code[offset]) {
+                    case op_iadd: op = ir_bin_op::add; break;
+                    case op_isub: op = ir_bin_op::sub; break;
+                    case op_imul: op = ir_bin_op::mul; break;
+                    default: assert(false)
+                }
+                ir.bin_op(var1, var2, result, op);
                 break;
             }
             case op_iinc: {

@@ -39,6 +39,10 @@ ostream& operator<<(ostream& stream, const jit_value_location& loc) {
     return stream;
 }
 
+std::ostream& operator<<(std::ostream& stream, const jit_register64& reg) {
+    return stream << jit_value_location(reg);
+}
+
 bool jit_value_location::operator==(const jit_value_location& other) const {
     return reg == other.reg && stack_offset == other.stack_offset;
 }
@@ -100,12 +104,11 @@ uint8_t create_mod_rm(uint8_t& rex, jit_value_location rm, jit_value_location r)
     return reg | mod_rm;
 }
 
-uint8_t create_mod_rm_reg_digit(jit_value_location rm, uint8_t digit) {
+uint8_t create_mod_rm_reg_digit(uint8_t& rex, jit_value_location rm, uint8_t digit) {
     auto rm_reg = rm.reg;
     assert(rm_reg != jit_register64::no_register)
 
-    uint8_t dummy;
-    auto rm_index = get_register_index_long(dummy, 0, rm_reg);
+    auto rm_index = get_register_index_long(rex, REX_B, rm_reg);
 
     return (digit << 3) | 0b11000000 | rm_index;
 }
@@ -170,9 +173,10 @@ void code_builder::add(jit_value_location from, jit_value_location to) {
 void code_builder::add(int32_t from, jit_value_location to) {
     // from is sign-extended to `to` register
     log(cout << "    add " << to << ", " << from << endl;)
-    auto mod_rm = create_mod_rm_reg_digit(to, 0);
+    auto rex = REX_W;
+    auto mod_rm = create_mod_rm_reg_digit(rex, to, 0);
 
-    code.push_back(REX_W);
+    code.push_back(rex);
     code.push_back(0x81);
     code.push_back(mod_rm);
     push_imm32(from);
@@ -188,6 +192,27 @@ void code_builder::sub(jit_value_location from, jit_value_location to) {
     code.push_back(mod_rm);
 }
 
+void code_builder::mul(jit_value_location from, jit_value_location to) {
+    log(cout << "    mul " << to << ", " << from << endl;)
+    auto rex = REX_W;
+    auto mod_rm = create_mod_rm(rex, from, to);
+
+    code.push_back(rex);
+    code.push_back(0x0F);
+    code.push_back(0xAF);
+    code.push_back(mod_rm);
+}
+
+void code_builder::neg(jit_value_location value) {
+    log(cout << "    neg " << value << endl;)
+    auto rex = REX_W;
+    auto mod_rm = create_mod_rm_reg_digit(rex, value, 3);
+
+    code.push_back(rex);
+    code.push_back(0xF7);
+    code.push_back(mod_rm);
+}
+
 void code_builder::cmp(jit_value_location first, jit_value_location second) {
     log(cout << "    cmp " << first << ", " << second << endl;)
     auto rex = REX_W;
@@ -196,6 +221,18 @@ void code_builder::cmp(jit_value_location first, jit_value_location second) {
     code.push_back(rex);
     code.push_back(0x39);
     code.push_back(mod_rm);
+}
+
+void code_builder::cmp(jit_value_location first, int32_t second) {
+    // second it sign-extended to 64 bits
+    log(cout << "    cmp " << first << ", " << second << endl;)
+    auto rex = REX_W;
+    auto mod_rm = create_mod_rm_reg_digit(rex, first, 7);
+
+    code.push_back(rex);
+    code.push_back(0x81);
+    code.push_back(mod_rm);
+    push_imm32(second);
 }
 
 void code_builder::jcc32(uint8_t opcode, int label_id) {

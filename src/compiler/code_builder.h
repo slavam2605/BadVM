@@ -5,12 +5,15 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <cstdint>
+#include <ostream>
 
 enum class jit_register64 {
     rax, rbx, rcx, rdx, rsp, rbp, rsi, rdi,
     r8, r9, r10, r11, r12, r13, r14, r15,
     no_register
 };
+
+std::ostream& operator<<(std::ostream& stream, const jit_register64& reg);
 
 struct jit_value_location {
     jit_register64 reg;
@@ -58,7 +61,10 @@ public:
     void add(jit_value_location from, jit_value_location to);
     void add(int32_t from, jit_value_location to);
     void sub(jit_value_location from, jit_value_location to);
+    void mul(jit_value_location from, jit_value_location to);
+    void neg(jit_value_location value);
     void cmp(jit_value_location first, jit_value_location second);
+    void cmp(jit_value_location first, int32_t second);
     void je(int label_id);
     void jne(int label_id);
     void jl(int label_id);

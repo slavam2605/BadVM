@@ -127,12 +127,12 @@ jvm_value vm::interpret(const class_file* current_class, const code_attribute_in
                 break;
             case op_bipush: {
                 read_byte1(value)
-                push_int(value)
+                push_int((int8_t) value)
                 break;
             }
             case op_sipush: {
                 read_byte2(value)
-                push_short(value)
+                push_short((int16_t) value)
                 break;
             }
             case op_ldc: {

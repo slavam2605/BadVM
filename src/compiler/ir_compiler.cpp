@@ -6,6 +6,8 @@
 #include <unordered_set>
 #include <queue>
 
+#define assert_fit_int32(x) assert(static_cast<int32_t>(x) == x)
+
 using namespace std;
 
 ir_compiler::ir_compiler(code_manager& manager)
@@ -83,9 +85,11 @@ void ir_compiler::convert_to_ssa() {
 
     for (auto& block : blocks) {
         for (const auto& instruction : block.ir) {
-            for (auto value : instruction->get_in_values()) {
-                if (value->mode != ir_value_mode::var) continue;
-                value->var.version = last_var_version[value->var.id];
+            if (instruction->tag != ir_instruction_tag::phi) {
+                for (auto value : instruction->get_in_values()) {
+                    if (value->mode != ir_value_mode::var) continue;
+                    value->var.version = last_var_version[value->var.id];
+                }
             }
             for (const auto& var : instruction->get_out_variables()) {
                 var->version = ++last_var_version[var->id];
@@ -174,36 +178,242 @@ bool eliminate_trivial_phi(vector<ir_basic_block>& blocks) {
     return changed;
 }
 
+bool simplify_instructions(vector<ir_basic_block>& blocks) {
+    bool changed = false;
+    for (auto& block : blocks) {
+        for (int i = 0; i < block.ir.size(); i++) {
+            for (const auto& item : block.ir[i]->get_in_values()) {
+                if (item->mode != ir_value_mode::int64) goto ir_loop_end;
+            }
+            switch (block.ir[i]->tag) {
+                case ir_instruction_tag::bin_op: {
+                    auto instruction = static_pointer_cast<ir_bin_op_insruction>(block.ir[i]);
+                    auto first = instruction->first.value;
+                    auto second = instruction->second.value;
+                    int64_t value;
+                    switch (instruction->op) {
+                        case ir_bin_op::add: value = first + second; break;
+                        case ir_bin_op::sub: value = first - second; break;
+                        case ir_bin_op::mul: value = first * second; break;
+                        default_fail
+                    }
+                    block.ir[i] = make_shared<ir_assign_instruction>(ir_value(value), instruction->to);
+                    changed = true;
+                    break;
+                }
+                case ir_instruction_tag::cmp_jump: {
+                    auto instruction = static_pointer_cast<ir_cmp_jump_instruction>(block.ir[i]);
+                    auto first = instruction->first.value;
+                    auto second = instruction->second.value;
+                    bool value;
+                    switch (instruction->mode) {
+                        case ir_cmp_mode::eq: value = first == second; break;
+                        case ir_cmp_mode::neq: value = first != second; break;
+                        case ir_cmp_mode::lt: value = first < second; break;
+                        case ir_cmp_mode::le: value = first <= second; break;
+                        case ir_cmp_mode::gt: value = first > second; break;
+                        case ir_cmp_mode::ge: value = first >= second; break;
+                        default_fail
+                    }
+                    auto label = value ? instruction->label_true : instruction->label_false;
+                    block.ir[i] = make_shared<ir_jump_instruction>(label);
+                    changed = true;
+                    break;
+                }
+                case ir_instruction_tag::assign:
+                case ir_instruction_tag::jump:
+                case ir_instruction_tag::ret:
+                case ir_instruction_tag::phi: break;
+                default_fail
+            }
+            ir_loop_end:;
+        }
+    }
+    return changed;
+}
+
+bool remove_unused_blocks(vector<ir_basic_block>& blocks) {
+    unordered_set<ir_label> used_labels;
+    used_labels.insert(ir_label(0)); // root block
+    for (const auto& block : blocks) {
+        for (const auto& label : block.ir.back()->get_jump_labels()) {
+            used_labels.insert(label);
+        }
+    }
+    auto new_end = remove_if(blocks.begin(), blocks.end(), [&](const auto& block){
+        return used_labels.find(block.label) == used_labels.end();
+    });
+    if (new_end == blocks.end())
+        return false;
+
+    blocks.erase(new_end, blocks.end());
+    return true;
+}
+
 void ir_compiler::optimize() {
     bool changed = true;
     while (changed) {
         changed = false;
-        changed |= remove_unused_vars(blocks);
+        changed |= simplify_instructions(blocks);
         changed |= inline_assigns(blocks);
         changed |= eliminate_trivial_phi(blocks);
+        changed |= remove_unused_vars(blocks);
+        changed |= remove_unused_blocks(blocks);
     }
 
-    cout << endl << "Optimized SSA IR:" << endl;
+    cout << endl << "---- Optimized SSA IR ----" << endl;
     for (const auto& block : blocks) {
         pretty_print(cout, block);
     }
 }
 
+void ir_compiler::compile_phi_dfs(const jit_register64& start, int version,
+                                  const unordered_map<jit_register64, unordered_set<jit_register64>>& assign_from_map,
+                                  unordered_map<jit_register64, int>& visited_version) {
+    auto iter = visited_version.find(start);
+    if (iter != visited_version.end()) {
+        auto found_version = iter->second;
+        if (found_version != version) return;
+        assert(false) // loop found, TODO: support loop resolution
+    }
+    visited_version[start] = version;
+    auto to_iter = assign_from_map.find(start);
+    if (to_iter == assign_from_map.end()) return;
+    for (const auto& to : to_iter->second) {
+        compile_phi_dfs(to, version, assign_from_map, visited_version);
+        compile_assign(to, start);
+    }
+}
+
 void ir_compiler::compile_phi_before_jump(const ir_label& current_label, const ir_basic_block* target_block) {
-    // TODO check phi swap problem, maybe group all phi's ang treat them together in liveness analysis
+//    cout << "L" << current_label.id << "_PHI_BLOCK:" << endl;
+    unordered_map<jit_register64, unordered_set<jit_register64>> assign_from_map;
+    vector<pair<jit_register64, ir_value>> not_var_assign_list;
+
     for (const auto& item : target_block->ir) {
         if (item->tag != ir_instruction_tag::phi) break; // assume all phi's are in the beginning of a block
         auto instruction = static_pointer_cast<ir_phi_instruction>(item);
         for (const auto& [a_label, value] : instruction->edges) {
             if (a_label != current_label) continue;
-            compile_assign(reg_list[color[instruction->to]], value);
+            if (value.mode == ir_value_mode::var) {
+                auto from_reg = reg_list[color[value.var]];
+                auto to_reg = reg_list[color[instruction->to]];
+                if (from_reg != to_reg) {
+                    assign_from_map[from_reg].insert(to_reg);
+                }
+            } else {
+                not_var_assign_list.emplace_back(reg_list[color[instruction->to]], value);
+            }
             break;
         }
+    }
+
+    // TODO add cycle detection and resolution
+    int version = 0;
+    unordered_map<jit_register64, int> visited_version;
+    for (const auto& [from, _] : assign_from_map) {
+        compile_phi_dfs(from, version, assign_from_map, visited_version);
+        version++;
+    }
+    for (const auto& [to, value] : not_var_assign_list) {
+        compile_assign(to, value);
+    }
+}
+
+void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruction) {
+    auto op = instruction->op;
+    auto first_value = instruction->first;
+    auto second_value = instruction->second;
+    auto to = reg_list[color[instruction->to]];
+    switch (op) {
+        case ir_bin_op::add:
+        case ir_bin_op::mul: {
+            if ((first_value.mode != ir_value_mode::var && second_value.mode == ir_value_mode::var) ||
+                (first_value.mode == ir_value_mode::var && second_value.mode == ir_value_mode::var &&
+                 reg_list[color[second_value.var]] == to)) {
+                swap(first_value, second_value);
+            }
+            break;
+        }
+        case ir_bin_op::sub: break;
+        default_fail
+    }
+
+    switch (first_value.mode) {
+        case ir_value_mode::var: {
+            auto first = reg_list[color[first_value.var]];
+            switch (second_value.mode) {
+                case ir_value_mode::var: {
+                    auto second = reg_list[color[second_value.var]];
+                    switch (op) {
+                        case ir_bin_op::add: {
+                            if (first == to) {
+                                builder.add(second, to);
+                            } else {
+                                assert(second != to)
+                                builder.mov(first, to);
+                                builder.add(second, to);
+                            }
+                            break;
+                        }
+                        case ir_bin_op::sub: {
+                            if (first == to) {
+                                builder.sub(second, to);
+                            } else if (second == to) {
+                                // This is faster then `sub to, first; neg to`
+                                builder.neg(to);
+                                builder.add(first, to);
+                            } else {
+                                builder.mov(first, to);
+                                builder.sub(second, to);
+                            }
+                            break;
+                        }
+                        case ir_bin_op::mul: {
+                            if (first != to) {
+                                builder.mov(first, to);
+                            }
+                            builder.mul(second, to);
+                            break;
+                        }
+                        default_fail
+                    }
+                    break;
+                }
+                case ir_value_mode::int64: {
+                    // TODO implement add with int64
+                    auto value = second_value.value;
+                    assert_fit_int32(value)
+                    if (first != to) {
+                        builder.mov(first, to);
+                    }
+                    switch (op) {
+                        case ir_bin_op::add: builder.add(value, to); break;
+                        case ir_bin_op::sub: assert(false)
+                        case ir_bin_op::mul: assert(false)
+                        default: assert(false)
+                    }
+                    break;
+                }
+                default: assert(false)
+            }
+            break;
+        }
+        case ir_value_mode::int64: {
+            switch (op) {
+                case ir_bin_op::sub: {
+                    assert(false) // TODO
+                    break;
+                }
+                default_fail
+            }
+        }
+        default: assert(false)
     }
 }
 
 const uint8_t* ir_compiler::compile_ssa() {
-    cout << endl;
+    cout << endl << "---- x86-64 assembler code ----" << endl;
     assert(blocks[0].label.id == 0) // must start from root block
     for (int i = 0; i < blocks.size(); i++) {
         const auto& block = blocks[i];
@@ -220,67 +430,7 @@ const uint8_t* ir_compiler::compile_ssa() {
                 }
                 case ir_instruction_tag::bin_op: {
                     auto instruction = static_pointer_cast<ir_bin_op_insruction>(item);
-                    auto to = reg_list[color[instruction->to]];
-                    switch (instruction->first.mode) {
-                        case ir_value_mode::var: {
-                            auto first = reg_list[color[instruction->first.var]];
-                            switch (instruction->second.mode) {
-                                case ir_value_mode::var: {
-                                    auto second = reg_list[color[instruction->second.var]];
-                                    switch (instruction->op) {
-                                        case ir_bin_op::add: {
-                                            if (first == to) {
-                                                builder.add(second, to);
-                                            } else if (second == to) {
-                                                builder.add(first, to);
-                                            } else {
-                                                builder.mov(first, to);
-                                                builder.add(second, to);
-                                            }
-                                            break;
-                                        }
-                                        case ir_bin_op::sub: {
-                                            if (first == to) {
-                                                builder.sub(second, to);
-                                            } else if (second == to) {
-                                                // TODO get a temp register
-                                                builder.mov(second, r11);
-                                                builder.mov(first, to);
-                                                builder.sub(r11, to);
-                                            } else {
-                                                builder.mov(first, to);
-                                                builder.sub(second, to);
-                                            }
-                                            break;
-                                        }
-                                        default: assert(false);
-                                    }
-                                    break;
-                                }
-                                case ir_value_mode::int64: {
-                                    // TODO implement add with int64
-                                    auto value = instruction->second.value;
-                                    assert(static_cast<int32_t>(value) == value)
-                                    if (first != to) {
-                                        builder.mov(first, to);
-                                    }
-                                    builder.add(value, to);
-                                    break;
-                                }
-                                default: assert(false)
-                            }
-                            break;
-                        }
-                        case ir_value_mode::int64: {
-                            // TODO such instructions should be eliminated by the optimizer
-                            if (instruction->second.mode == ir_value_mode::int64 && instruction->op == ir_bin_op::add) {
-                                builder.mov(instruction->first.value + instruction->second.value, reg_list[color[instruction->to]]);
-                                break;
-                            }
-                            assert(false)
-                        }
-                        default: assert(false)
-                    }
+                    compile_bin_op(instruction);
                     break;
                 }
                 case ir_instruction_tag::cmp_jump: {
@@ -291,8 +441,8 @@ const uint8_t* ir_compiler::compile_ssa() {
                     if (first.mode == ir_value_mode::var && second.mode == ir_value_mode::int64) {
                         auto first_reg = reg_list[color[first.var]];
                         auto second_value = second.value;
-                        builder.mov(second_value, r11); // TODO create a temp reg
-                        builder.cmp(first_reg, r11);
+                        assert_fit_int32(second_value)
+                        builder.cmp(first_reg, second_value);
                     } else {
                         assert(false);
                     }
@@ -353,7 +503,7 @@ const uint8_t* ir_compiler::compile_ssa() {
 
     auto code_chunk = manager.add_code_chunk(builder.get_code());
 
-    cout << endl;
+    cout << endl << "---- Compiled bytes ----" << endl;
     for (const auto& byte : builder.get_code()) {
         printf("%02X ", byte);
     }
@@ -362,13 +512,16 @@ const uint8_t* ir_compiler::compile_ssa() {
     return code_chunk;
 }
 
-void ir_compiler::compile_assign(jit_register64& to, const ir_value& from_value) {
+void ir_compiler::compile_assign(const jit_register64& to, const jit_register64& from) {
+    if (from == to) return;
+    builder.mov(from, to);
+}
+
+void ir_compiler::compile_assign(const jit_register64& to, const ir_value& from_value) {
     switch (from_value.mode) {
         case ir_value_mode::var: {
             auto from = reg_list[color[from_value.var]];
-            if (from != to) {
-                builder.mov(from, to);
-            }
+            compile_assign(to, from);
             break;
         }
         case ir_value_mode::int64: {
@@ -376,6 +529,30 @@ void ir_compiler::compile_assign(jit_register64& to, const ir_value& from_value)
             break;
         }
         default: assert(false)
+    }
+}
+
+void merge_succ_blocks(unordered_set<ir_variable>& live, unordered_map<ir_label, unordered_set<ir_variable>> live_vars,
+                       unordered_map<ir_label, vector<ir_label>>& control_flow_out,
+                       unordered_map<ir_label, const ir_basic_block*>& block_map, const ir_basic_block* block) {
+    for (const auto& succ_label : control_flow_out[block->label]) {
+        live.insert(live_vars[succ_label].begin(), live_vars[succ_label].end());
+        auto succ_block = block_map[succ_label];
+        for (const auto& item : succ_block->ir) {
+            if (item->tag != ir_instruction_tag::phi) break;
+            auto phi_instruction = static_pointer_cast<ir_phi_instruction>(item);
+            live.erase(phi_instruction->to);
+        }
+        for (const auto& item : succ_block->ir) {
+            if (item->tag != ir_instruction_tag::phi) break;
+            auto phi_instruction = static_pointer_cast<ir_phi_instruction>(item);
+            for (const auto& [from_label, value] : phi_instruction->edges) {
+                if (from_label != block->label) continue;
+                if (value.mode != ir_value_mode::var) break;
+                live.insert(value.var);
+                break;
+            }
+        }
     }
 }
 
@@ -406,11 +583,11 @@ void ir_compiler::color_variables() {
         in_list.erase(label);
         auto block = block_map[label];
         unordered_set<ir_variable> live;
-        for (const auto& succ_label : control_flow_out[block->label]) {
-            live.insert(live_vars[succ_label].begin(), live_vars[succ_label].end());
-        }
+        merge_succ_blocks(live, live_vars, control_flow_out, block_map, block);
+
         for (auto iter = block->ir.rbegin(); iter != block->ir.rend(); ++iter) {
             auto instruction = *iter;
+            if (instruction->tag == ir_instruction_tag::phi) continue;
             for (auto var : instruction->get_out_variables()) {
                 live.erase(*var);
             }
@@ -435,11 +612,10 @@ void ir_compiler::color_variables() {
     unordered_map<ir_variable, unordered_set<ir_variable>> interference_graph;
     for (const auto& block : blocks) {
         unordered_set<ir_variable> live;
-        for (const auto& succ_label : control_flow_out[block.label]) {
-            live.insert(live_vars[succ_label].begin(), live_vars[succ_label].end());
-        }
+        merge_succ_blocks(live, live_vars, control_flow_out, block_map, &block);
         for (auto iter = block.ir.rbegin(); iter != block.ir.rend(); ++iter) {
             auto instruction = *iter;
+            if (instruction->tag == ir_instruction_tag::phi) continue;
             for (auto var : instruction->get_out_variables()) {
                 live.erase(*var);
             }
@@ -470,6 +646,11 @@ void ir_compiler::color_variables() {
             break;
         }
         assert(color[var] != 0)
+    }
+
+    cout << endl << "---- Variables coloring ----" << endl;
+    for (const auto& [var, _] : interference_graph) {
+        cout << var << " -> " << color[var] << endl;
     }
 }
 

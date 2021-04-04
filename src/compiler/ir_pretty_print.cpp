@@ -36,6 +36,7 @@ ostream& operator<<(ostream& stream, const shared_ptr<ir_instruction>& item) {
             switch (instruction->op) {
                 case ir_bin_op::add: stream << " + "; break;
                 case ir_bin_op::sub: stream << " - "; break;
+                case ir_bin_op::mul: stream << " * "; break;
                 default: assert(false)
             }
             stream << instruction->second << endl;
@@ -87,6 +88,7 @@ ostream& operator<<(ostream& stream, const shared_ptr<ir_instruction>& item) {
 }
 
 void ir_compiler::pretty_print(ostream& stream) {
+    cout << "---- Converted IR code ----" << endl;
     for (int ir_offset = 0; ir_offset < ir.size(); ir_offset++) {
         const auto& item = ir[ir_offset];
         auto label_iter = offset_to_label.find(ir_offset);
