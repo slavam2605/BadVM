@@ -37,11 +37,12 @@ public:
     void add_label(ir_label label, int ir_offset);
     void pretty_print(std::ostream& stream);
     void pretty_print(std::ostream& stream, const ir_basic_block& block);
-    void compile_assign(const jit_register64& to, const ir_value& from_value);
-    void compile_assign(const jit_register64& to, const jit_register64& from);
+    void compile_assign(const ir_value& from_value, const jit_register64& to);
+    void compile_assign(const jit_register64& from, const jit_register64& to);
     void compile_phi_dfs(const jit_register64& start, int version,
                          const std::unordered_map<jit_register64, std::unordered_set<jit_register64>>& assign_from_map,
-                         std::unordered_map<jit_register64, int>& visited_version);
+                         std::unordered_map<jit_register64, int>& visited_version,
+                         std::unordered_map<jit_register64, jit_register64>& temp);
     void compile_phi_before_jump(const ir_label& current_label, const ir_basic_block* target_block);
     void compile_bin_op(const std::shared_ptr<ir_bin_op_insruction>& instruction);
     const uint8_t* compile_ssa();

@@ -85,7 +85,7 @@ struct ir_assign_instruction : ir_instruction {
 };
 
 enum class ir_bin_op {
-    add, sub, mul
+    add, sub, mul, div, rem
 };
 
 struct ir_bin_op_insruction : ir_instruction {

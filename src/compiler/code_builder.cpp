@@ -171,7 +171,7 @@ void code_builder::add(jit_value_location from, jit_value_location to) {
 }
 
 void code_builder::add(int32_t from, jit_value_location to) {
-    // from is sign-extended to `to` register
+    // from is sign-extended to 64 bits
     log(cout << "    add " << to << ", " << from << endl;)
     auto rex = REX_W;
     auto mod_rm = create_mod_rm_reg_digit(rex, to, 0);
@@ -192,14 +192,36 @@ void code_builder::sub(jit_value_location from, jit_value_location to) {
     code.push_back(mod_rm);
 }
 
-void code_builder::mul(jit_value_location from, jit_value_location to) {
-    log(cout << "    mul " << to << ", " << from << endl;)
+void code_builder::sub(int32_t from, jit_value_location to) {
+    // from is sign-extended to 64 bits
+    log(cout << "    sub " << to << ", " << from << endl;)
+    auto rex = REX_W;
+    auto mod_rm = create_mod_rm_reg_digit(rex, to, 5);
+
+    code.push_back(rex);
+    code.push_back(0x81);
+    code.push_back(mod_rm);
+    push_imm32(from);
+}
+
+void code_builder::imul(jit_value_location from, jit_value_location to) {
+    log(cout << "    imul " << to << ", " << from << endl;)
     auto rex = REX_W;
     auto mod_rm = create_mod_rm(rex, from, to);
 
     code.push_back(rex);
     code.push_back(0x0F);
     code.push_back(0xAF);
+    code.push_back(mod_rm);
+}
+
+void code_builder::idiv(jit_value_location value) {
+    log(cout << "    idiv " << value << endl;)
+    auto rex = REX_W;
+    auto mod_rm = create_mod_rm_reg_digit(rex, value, 7);
+
+    code.push_back(rex);
+    code.push_back(0xF7);
     code.push_back(mod_rm);
 }
 
@@ -211,6 +233,12 @@ void code_builder::neg(jit_value_location value) {
     code.push_back(rex);
     code.push_back(0xF7);
     code.push_back(mod_rm);
+}
+
+void code_builder::cqo() {
+    log(cout << "    cqo" << endl;)
+    code.push_back(REX_W);
+    code.push_back(0x99);
 }
 
 void code_builder::cmp(jit_value_location first, jit_value_location second) {

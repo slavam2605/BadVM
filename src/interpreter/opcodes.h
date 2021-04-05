@@ -68,6 +68,7 @@ static constexpr uint8_t op_imul = 0x68;
 static constexpr uint8_t op_fmul = 0x6a;
 static constexpr uint8_t op_idiv = 0x6c;
 static constexpr uint8_t op_ddiv = 0x6f;
+static constexpr uint8_t op_irem = 0x70;
 static constexpr uint8_t op_ishl = 0x78;
 static constexpr uint8_t op_ishr = 0x7a;
 static constexpr uint8_t op_iushr = 0x7c;

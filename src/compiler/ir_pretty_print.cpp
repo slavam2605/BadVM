@@ -37,6 +37,8 @@ ostream& operator<<(ostream& stream, const shared_ptr<ir_instruction>& item) {
                 case ir_bin_op::add: stream << " + "; break;
                 case ir_bin_op::sub: stream << " - "; break;
                 case ir_bin_op::mul: stream << " * "; break;
+                case ir_bin_op::div: stream << " / "; break;
+                case ir_bin_op::rem: stream << " % "; break;
                 default: assert(false)
             }
             stream << instruction->second << endl;

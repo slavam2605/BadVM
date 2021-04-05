@@ -61,8 +61,11 @@ public:
     void add(jit_value_location from, jit_value_location to);
     void add(int32_t from, jit_value_location to);
     void sub(jit_value_location from, jit_value_location to);
-    void mul(jit_value_location from, jit_value_location to);
+    void sub(int32_t from, jit_value_location to);
+    void imul(jit_value_location from, jit_value_location to);
+    void idiv(jit_value_location value);
     void neg(jit_value_location value);
+    void cqo();
     void cmp(jit_value_location first, jit_value_location second);
     void cmp(jit_value_location first, int32_t second);
     void je(int label_id);

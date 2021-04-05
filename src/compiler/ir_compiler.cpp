@@ -11,7 +11,7 @@
 using namespace std;
 
 ir_compiler::ir_compiler(code_manager& manager)
-        : manager(manager), reg_list{rax, rcx, rdx, r8, r9, r10, r11} {}
+        : manager(manager), reg_list{rax, rcx, rdx, r8, r9/*, r10, r11*/} {}
 
 ir_basic_block::ir_basic_block(const ir_label& label) : label(label) {}
 
@@ -195,6 +195,8 @@ bool simplify_instructions(vector<ir_basic_block>& blocks) {
                         case ir_bin_op::add: value = first + second; break;
                         case ir_bin_op::sub: value = first - second; break;
                         case ir_bin_op::mul: value = first * second; break;
+                        case ir_bin_op::div: value = first / second; break;
+                        case ir_bin_op::rem: value = first % second; break;
                         default_fail
                     }
                     block.ir[i] = make_shared<ir_assign_instruction>(ir_value(value), instruction->to);
@@ -269,19 +271,28 @@ void ir_compiler::optimize() {
 
 void ir_compiler::compile_phi_dfs(const jit_register64& start, int version,
                                   const unordered_map<jit_register64, unordered_set<jit_register64>>& assign_from_map,
-                                  unordered_map<jit_register64, int>& visited_version) {
+                                  unordered_map<jit_register64, int>& visited_version,
+                                  unordered_map<jit_register64, jit_register64>& temp) {
     auto iter = visited_version.find(start);
     if (iter != visited_version.end()) {
         auto found_version = iter->second;
         if (found_version != version) return;
-        assert(false) // loop found, TODO: support loop resolution
+        // loop detected, TODO properly allocate a temp register
+        compile_assign(start, r11);
+        temp[start] = r11;
+        return;
     }
     visited_version[start] = version;
     auto to_iter = assign_from_map.find(start);
     if (to_iter == assign_from_map.end()) return;
     for (const auto& to : to_iter->second) {
-        compile_phi_dfs(to, version, assign_from_map, visited_version);
-        compile_assign(to, start);
+        compile_phi_dfs(to, version, assign_from_map, visited_version, temp);
+        auto temp_iter = temp.find(start);
+        if (temp_iter != temp.end()) {
+            compile_assign(temp_iter->second, to);
+        } else {
+            compile_assign(start, to);
+        }
     }
 }
 
@@ -311,12 +322,14 @@ void ir_compiler::compile_phi_before_jump(const ir_label& current_label, const i
     // TODO add cycle detection and resolution
     int version = 0;
     unordered_map<jit_register64, int> visited_version;
+    unordered_map<jit_register64, jit_register64> temp;
     for (const auto& [from, _] : assign_from_map) {
-        compile_phi_dfs(from, version, assign_from_map, visited_version);
+        temp.clear();
+        compile_phi_dfs(from, version, assign_from_map, visited_version, temp);
         version++;
     }
     for (const auto& [to, value] : not_var_assign_list) {
-        compile_assign(to, value);
+        compile_assign(value, to);
     }
 }
 
@@ -335,7 +348,10 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
             }
             break;
         }
-        case ir_bin_op::sub: break;
+        case ir_bin_op::sub:
+        case ir_bin_op::div:
+        case ir_bin_op::rem:
+            break;
         default_fail
     }
 
@@ -373,7 +389,23 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
                             if (first != to) {
                                 builder.mov(first, to);
                             }
-                            builder.mul(second, to);
+                            builder.imul(second, to);
+                            break;
+                        }
+                        case ir_bin_op::rem: {
+                            // TODO allocate temp registers
+                            builder.mov(rdx, r11);
+                            builder.mov(rax, r10);
+                            compile_assign(first, rax);
+                            builder.cqo();
+                            builder.idiv(second == rax ? r10 : (second == rdx ? r11 : second));
+                            compile_assign(rdx, to);
+                            if (rax != to) {
+                                builder.mov(r10, rax);
+                            }
+                            if (rdx != to) {
+                                builder.mov(r11, rdx);
+                            }
                             break;
                         }
                         default_fail
@@ -389,7 +421,7 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
                     }
                     switch (op) {
                         case ir_bin_op::add: builder.add(value, to); break;
-                        case ir_bin_op::sub: assert(false)
+                        case ir_bin_op::sub: builder.sub(value, to); break;
                         case ir_bin_op::mul: assert(false)
                         default: assert(false)
                     }
@@ -425,7 +457,7 @@ const uint8_t* ir_compiler::compile_ssa() {
                     auto instruction = static_pointer_cast<ir_assign_instruction>(item);
                     auto to = reg_list[color[instruction->to]];
                     auto from_value = instruction->from;
-                    compile_assign(to, from_value);
+                    compile_assign(from_value, to);
                     break;
                 }
                 case ir_instruction_tag::bin_op: {
@@ -438,11 +470,22 @@ const uint8_t* ir_compiler::compile_ssa() {
                     auto first = instruction->first;
                     auto second = instruction->second;
                     // TODO implement cmp with imm
-                    if (first.mode == ir_value_mode::var && second.mode == ir_value_mode::int64) {
+                    if (first.mode == ir_value_mode::var) {
                         auto first_reg = reg_list[color[first.var]];
-                        auto second_value = second.value;
-                        assert_fit_int32(second_value)
-                        builder.cmp(first_reg, second_value);
+                        switch (second.mode) {
+                            case ir_value_mode::var: {
+                                auto second_reg = reg_list[color[second.var]];
+                                builder.cmp(first_reg, second_reg);
+                                break;
+                            }
+                            case ir_value_mode::int64: {
+                                auto second_value = second.value;
+                                assert_fit_int32(second_value)
+                                builder.cmp(first_reg, second_value);
+                                break;
+                            }
+                            default_fail
+                        }
                     } else {
                         assert(false);
                     }
@@ -512,12 +555,12 @@ const uint8_t* ir_compiler::compile_ssa() {
     return code_chunk;
 }
 
-void ir_compiler::compile_assign(const jit_register64& to, const jit_register64& from) {
+void ir_compiler::compile_assign(const jit_register64& from, const jit_register64& to) {
     if (from == to) return;
     builder.mov(from, to);
 }
 
-void ir_compiler::compile_assign(const jit_register64& to, const ir_value& from_value) {
+void ir_compiler::compile_assign(const ir_value& from_value, const jit_register64& to) {
     switch (from_value.mode) {
         case ir_value_mode::var: {
             auto from = reg_list[color[from_value.var]];
@@ -646,6 +689,7 @@ void ir_compiler::color_variables() {
             break;
         }
         assert(color[var] != 0)
+        assert(color[var] < reg_list.size())
     }
 
     cout << endl << "---- Variables coloring ----" << endl;

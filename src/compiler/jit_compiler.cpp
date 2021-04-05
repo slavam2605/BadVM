@@ -124,7 +124,9 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
             case op_istore_3: ir.assign(pop_stack(locals_count, stack_size), get_local(3)); break;
             case op_iadd:
             case op_isub:
-            case op_imul: {
+            case op_imul:
+            case op_idiv:
+            case op_irem: {
                 auto var2 = pop_stack(locals_count, stack_size);
                 auto var1 = pop_stack(locals_count, stack_size);
                 auto result = allocate_stack(locals_count, stack_size);
@@ -133,6 +135,8 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
                     case op_iadd: op = ir_bin_op::add; break;
                     case op_isub: op = ir_bin_op::sub; break;
                     case op_imul: op = ir_bin_op::mul; break;
+                    case op_idiv: op = ir_bin_op::div; break;
+                    case op_irem: op = ir_bin_op::rem; break;
                     default: assert(false)
                 }
                 ir.bin_op(var1, var2, result, op);
@@ -176,6 +180,40 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
                     default: assert(false)
                 }
                 ir.cmp_jump(var1, var2, cmp_mode, label_true, label_false);
+                ir.add_label(label_false, ir.ir_offset());
+                offset += 2;
+                break;
+            }
+            case op_ifeq:
+            case op_ifne:
+            case op_iflt:
+            case op_ifle:
+            case op_ifgt:
+            case op_ifge: {
+                uint8_t branchbyte1 = code[offset + 1];
+                uint8_t branchbyte2 = code[offset + 2];
+                int16_t bytecode_offset = (branchbyte1 << 8) | branchbyte2;
+                auto var = pop_stack(locals_count, stack_size);
+                auto target_offset = offset + bytecode_offset;
+                auto iter = bytecode_offset_to_ir.find(target_offset);
+                ir_label label_true = ir.create_label();
+                ir_label label_false = ir.create_label();
+                if (iter != bytecode_offset_to_ir.end()) {
+                    ir.add_label(label_true, iter->second);
+                } else {
+                    pending_labels.insert_or_assign(target_offset, label_true);
+                }
+                ir_cmp_mode cmp_mode;
+                switch (code[offset]) {
+                    case op_ifeq: cmp_mode = ir_cmp_mode::eq; break;
+                    case op_ifne: cmp_mode = ir_cmp_mode::neq; break;
+                    case op_iflt: cmp_mode = ir_cmp_mode::lt; break;
+                    case op_ifge: cmp_mode = ir_cmp_mode::ge; break;
+                    case op_ifgt: cmp_mode = ir_cmp_mode::gt; break;
+                    case op_ifle: cmp_mode = ir_cmp_mode::le; break;
+                    default: assert(false)
+                }
+                ir.cmp_jump(var, ir_value(0), cmp_mode, label_true, label_false);
                 ir.add_label(label_false, ir.ir_offset());
                 offset += 2;
                 break;
