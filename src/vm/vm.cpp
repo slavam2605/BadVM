@@ -153,6 +153,23 @@ const code_attribute_info* vm::get_code_info(const class_file* current_class, co
     throw runtime_error("Failed to find Code attribute");
 }
 
+void benchmark(int32_t (*foo)(), int warmup_count = 5, int measure_count = 10) {
+    for (int i = 0; i < warmup_count; i++) {
+        foo();
+    }
+
+    int32_t result;
+    auto start = chrono::steady_clock::now();
+    for (int i = 0; i < measure_count; i++) {
+        result = foo();
+    }
+    auto end = chrono::steady_clock::now();
+    auto duration = chrono::duration_cast<chrono::milliseconds>(end - start);
+
+    cout << result << endl;
+    cout << "Time: " << duration.count() / (double) measure_count << " ms" << endl;
+}
+
 void vm::compile_and_invoke(const class_file* current_class, const method_info& method, const vector<jvm_value>&& parameters) {
     if (false) {
         cout << interpret(current_class, method, move(parameters)).int_value << endl;
@@ -161,13 +178,7 @@ void vm::compile_and_invoke(const class_file* current_class, const method_info& 
         auto compiled_fun = compiler.compile(current_class, method, code_info);
         auto fun_ptr = reinterpret_cast<int32_t (*)()>(const_cast<void*>(compiled_fun));
 
-        auto start = chrono::system_clock::now();
-        auto result = fun_ptr();
-        auto end = chrono::system_clock::now();
-        auto duration = chrono::duration_cast<chrono::milliseconds>(end - start);
-
-        cout << result << endl;
-        cout << "Time: " << duration.count() << " ms" << endl;
+        benchmark(fun_ptr);
     }
 }
 

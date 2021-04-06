@@ -11,7 +11,7 @@
 using namespace std;
 
 ir_compiler::ir_compiler(code_manager& manager)
-        : manager(manager), reg_list{rax, rcx, rdx, r8, r9/*, r10, r11*/} {}
+        : manager(manager), reg_list{jit_register64::no_register, rax, rcx, rdx, r8, r9/*, r10, r11*/} {}
 
 ir_basic_block::ir_basic_block(const ir_label& label) : label(label) {}
 
@@ -394,8 +394,12 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
                         }
                         case ir_bin_op::rem: {
                             // TODO allocate temp registers
-                            builder.mov(rdx, r11);
-                            builder.mov(rax, r10);
+                            if (to != rdx || second == rdx) {
+                                builder.mov(rdx, r11);
+                            }
+                            if (to != rax || second == rax) {
+                                builder.mov(rax, r10);
+                            }
                             compile_assign(first, rax);
                             builder.cqo();
                             builder.idiv(second == rax ? r10 : (second == rdx ? r11 : second));
@@ -599,6 +603,56 @@ void merge_succ_blocks(unordered_set<ir_variable>& live, unordered_map<ir_label,
     }
 }
 
+void ir_compiler::calculate_color_preferences() {
+    unordered_map<ir_variable, unordered_map<ir_variable, int>> score;
+    for (const auto& block : blocks) {
+        for (const auto& item : block.ir) {
+            switch (item->tag) {
+                case ir_instruction_tag::phi: {
+                    auto instruction = static_pointer_cast<ir_phi_instruction>(item);
+                    for (const auto&[_, value] : instruction->edges) {
+                        if (value.mode != ir_value_mode::var) continue;
+                        if (value.var == instruction->to) continue;
+                        score[instruction->to][value.var]++;
+                        score[value.var][instruction->to]++;
+                    }
+                    break;
+                }
+                case ir_instruction_tag::bin_op: {
+                    auto instruction = static_pointer_cast<ir_bin_op_insruction>(item);
+                    auto first = instruction->first;
+                    auto second = instruction->second;
+                    auto to = instruction->to;
+                    switch (instruction->op) {
+                        case ir_bin_op::rem: {
+                            if (first.mode == ir_value_mode::var) {
+                                reg_preference[first.var].insert(rax);
+                            }
+                            reg_preference[to].insert(rdx);
+                            break;
+                        }
+                        default: break;
+                    }
+                }
+                default: break;
+            }
+        }
+    }
+
+    for (const auto& [var, map] : score) {
+        vector<pair<ir_variable, int>> to_vector;
+        for (const auto& item : map) {
+            to_vector.push_back(item);
+        }
+        sort(to_vector.begin(), to_vector.end(), [](const auto& a, const auto& b) {
+            return a.second > b.second;
+        });
+        for (const auto& [to_var, _] : to_vector) {
+            color_preference[var].push_back(to_var);
+        }
+    }
+}
+
 void ir_compiler::color_variables() {
     unordered_map<ir_label, vector<ir_label>> control_flow_in;
     unordered_map<ir_label, vector<ir_label>> control_flow_out;
@@ -677,19 +731,55 @@ void ir_compiler::color_variables() {
         }
     }
 
-    // color[var] == 0 => still not colored
-    for (const auto& [var, set] : interference_graph) {
+    calculate_color_preferences();
+    unordered_map<jit_register64, int> reg_to_color;
+    for (int i = 1; i < reg_list.size(); i++) {
+        reg_to_color[reg_list[i]] = i;
+    }
+    cout << endl << "---- Coloring preference ----" << endl;
+    for (const auto& [var, pref_set] : reg_preference) {
         unordered_set<int> used_colors;
-        for (const auto& other_var : set) {
+        for (const auto& other_var : interference_graph[var]) {
             used_colors.insert(color[other_var]);
         }
-        for (int i = 1; i < interference_graph.size() + 2; i++) {
-            if (used_colors.find(i) != used_colors.end()) continue;
-            color[var] = i;
+        for (const auto& target_reg : pref_set) {
+            auto preferred_color = reg_to_color[target_reg];
+            if (preferred_color == 0) continue;
+            if (used_colors.find(preferred_color) != used_colors.end()) continue;
+            cout << "Picked preferred register: " << var << " => " << target_reg << endl;
+            color[var] = preferred_color;
             break;
         }
         assert(color[var] != 0)
         assert(color[var] < reg_list.size())
+        assert(used_colors.find(color[var]) == used_colors.end())
+    }
+
+    for (const auto& [var, set] : interference_graph) {
+        if (color[var] != 0) continue;
+
+        unordered_set<int> used_colors;
+        for (const auto& other_var : set) {
+            used_colors.insert(color[other_var]);
+        }
+        for (const auto& target_var : color_preference[var]) {
+            auto preferred_color = color[target_var];
+            if (preferred_color == 0) continue;
+            if (used_colors.find(preferred_color) != used_colors.end()) continue;
+            cout << "Picked preferred color: " << var << " <=> " << target_var << endl;
+            color[var] = preferred_color;
+            goto color_done;
+        }
+        for (int i = 1; i <= interference_graph.size() + 1; i++) {
+            if (used_colors.find(i) != used_colors.end()) continue;
+            color[var] = i;
+            break;
+        }
+
+        color_done:
+        assert(color[var] != 0)
+        assert(color[var] < reg_list.size())
+        assert(used_colors.find(color[var]) == used_colors.end())
     }
 
     cout << endl << "---- Variables coloring ----" << endl;

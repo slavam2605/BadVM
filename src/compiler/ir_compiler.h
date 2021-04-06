@@ -26,6 +26,8 @@ class ir_compiler {
     std::vector<ir_basic_block> blocks;
 
     // Valid after coloring
+    std::unordered_map<ir_variable, std::vector<ir_variable>> color_preference;
+    std::unordered_map<ir_variable, std::unordered_set<jit_register64>> reg_preference;
     std::unordered_map<ir_variable, int> color;
     std::unordered_map<ir_label, const ir_basic_block*> block_map;
     std::vector<jit_register64> reg_list;
@@ -46,6 +48,7 @@ public:
     void compile_phi_before_jump(const ir_label& current_label, const ir_basic_block* target_block);
     void compile_bin_op(const std::shared_ptr<ir_bin_op_insruction>& instruction);
     const uint8_t* compile_ssa();
+    void calculate_color_preferences();
     void color_variables();
     void optimize();
     void convert_to_ssa();
