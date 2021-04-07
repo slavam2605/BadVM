@@ -414,17 +414,48 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
                     break;
                 }
                 case ir_value_mode::int64: {
-                    // TODO implement add with int64
                     auto value = second_value.value;
+                    if (op == ir_bin_op::rem) {
+                        // TODO replace idiv with a bit hack and imul
+                        // TODO allocate temp register
+                        jit_register64 temp = r11;
+                        if (to != rdx) {
+                            builder.mov(rdx, r11);
+                            temp = r10;
+                        }
+                        if (to != rax) {
+                            builder.mov(rax, r10);
+                            assert(temp != r10) // TODO can't allocate one more temp register
+                        }
+                        compile_assign(first, rax);
+                        builder.cqo();
+                        builder.mov(value, temp);
+                        builder.idiv(temp);
+                        compile_assign(rdx, to);
+                        if (rax != to) {
+                            builder.mov(r10, rax);
+                        }
+                        if (rdx != to) {
+                            builder.mov(r11, rdx);
+                        }
+                        break;
+                    }
+
                     assert_fit_int32(value)
+                    if (op == ir_bin_op::mul) {
+                        builder.imul(first, value, to);
+                        break;
+                    }
+
                     if (first != to) {
                         builder.mov(first, to);
                     }
                     switch (op) {
                         case ir_bin_op::add: builder.add(value, to); break;
                         case ir_bin_op::sub: builder.sub(value, to); break;
-                        case ir_bin_op::mul: assert(false)
-                        default: assert(false)
+                        case ir_bin_op::rem:
+                        case ir_bin_op::mul: assert(false) // handled above
+                        default_fail
                     }
                     break;
                 }
@@ -490,19 +521,24 @@ const uint8_t* ir_compiler::compile_ssa() {
                     } else {
                         assert(false);
                     }
+                    bool true_has_phi = block_map[instruction->label_true]->ir[0]->tag == ir_instruction_tag::phi;
+                    ir_label true_label = true_has_phi ? create_label() : instruction->label_true;
                     switch (instruction->mode) {
-                        case ir_cmp_mode::eq: builder.je(instruction->label_true.id); break;
-                        case ir_cmp_mode::neq: builder.jne(instruction->label_true.id); break;
-                        case ir_cmp_mode::lt: builder.jl(instruction->label_true.id); break;
-                        case ir_cmp_mode::le: builder.jle(instruction->label_true.id); break;
-                        case ir_cmp_mode::gt: builder.jg(instruction->label_true.id); break;
-                        case ir_cmp_mode::ge: builder.jge(instruction->label_true.id); break;
+                        case ir_cmp_mode::eq: builder.je(true_label.id); break;
+                        case ir_cmp_mode::neq: builder.jne(true_label.id); break;
+                        case ir_cmp_mode::lt: builder.jl(true_label.id); break;
+                        case ir_cmp_mode::le: builder.jle(true_label.id); break;
+                        case ir_cmp_mode::gt: builder.jg(true_label.id); break;
+                        case ir_cmp_mode::ge: builder.jge(true_label.id); break;
                     }
-                    // TODO insert a new block with phi's impl
-                    assert(block_map[instruction->label_true]->ir[0]->tag != ir_instruction_tag::phi)
                     compile_phi_before_jump(block.label, block_map[instruction->label_false]);
-                    if (i >= blocks.size() - 1 || blocks[i + 1].label != instruction->label_false) {
+                    if (true_has_phi || i >= blocks.size() - 1 || blocks[i + 1].label != instruction->label_false) {
                         builder.jmp(instruction->label_false.id);
+                    }
+                    if (true_has_phi) {
+                        builder.mark_label(true_label.id);
+                        compile_phi_before_jump(block.label, block_map[instruction->label_true]);
+                        builder.jmp(instruction->label_true.id);
                     }
                     break;
                 }

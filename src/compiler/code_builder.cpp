@@ -215,6 +215,17 @@ void code_builder::imul(jit_value_location from, jit_value_location to) {
     code.push_back(mod_rm);
 }
 
+void code_builder::imul(jit_value_location first, int32_t second, jit_value_location to) {
+    log(cout << "    imul " << to << ", " << first << ", " << second << endl;)
+    auto rex = REX_W;
+    auto mod_rm = create_mod_rm(rex, first, to);
+
+    code.push_back(rex);
+    code.push_back(0x69);
+    code.push_back(mod_rm);
+    push_imm32(second);
+}
+
 void code_builder::idiv(jit_value_location value) {
     log(cout << "    idiv " << value << endl;)
     auto rex = REX_W;

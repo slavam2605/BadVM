@@ -4,6 +4,7 @@
 #include "../utils/utils.h"
 #include "../class_file/access_flags.h"
 #include <chrono>
+#include <cmath>
 
 using namespace std;
 
@@ -153,21 +154,34 @@ const code_attribute_info* vm::get_code_info(const class_file* current_class, co
     throw runtime_error("Failed to find Code attribute");
 }
 
-void benchmark(int32_t (*foo)(), int warmup_count = 5, int measure_count = 10) {
-    for (int i = 0; i < warmup_count; i++) {
-        foo();
-    }
-
+void benchmark(int32_t (*foo)(), int warmup_count = 3, int measure_count = 7) {
     int32_t result;
-    auto start = chrono::steady_clock::now();
-    for (int i = 0; i < measure_count; i++) {
+    vector<double> measures;
+
+    for (int i = 0; i < warmup_count + measure_count; i++) {
+        auto start = chrono::steady_clock::now();
         result = foo();
+        auto end = chrono::steady_clock::now();
+        auto duration = chrono::duration_cast<chrono::milliseconds>(end - start);
+        cout << "Measure #" << i << ": " << duration.count() << " ms";
+        if (i < warmup_count) {
+            cout << " (warmup)";
+        } else {
+            measures.push_back(duration.count());
+        }
+        cout << endl;
     }
-    auto end = chrono::steady_clock::now();
-    auto duration = chrono::duration_cast<chrono::milliseconds>(end - start);
+    double sum = 0.0;
+    double sum_sq = 0.0;
+    for (int i = 0; i < measures.size(); i++) {
+        sum += measures[i];
+        sum_sq += measures[i] * measures[i];
+    }
+    double average = sum / measures.size();
+    double mean_sq_var = sqrt(sum_sq / measures.size() - average * average);
 
     cout << result << endl;
-    cout << "Time: " << duration.count() / (double) measure_count << " ms" << endl;
+    cout << "Time: " << average << " ms +- " << mean_sq_var << " ms" << endl;
 }
 
 void vm::compile_and_invoke(const class_file* current_class, const method_info& method, const vector<jvm_value>&& parameters) {

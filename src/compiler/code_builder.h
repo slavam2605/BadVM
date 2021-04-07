@@ -63,6 +63,7 @@ public:
     void sub(jit_value_location from, jit_value_location to);
     void sub(int32_t from, jit_value_location to);
     void imul(jit_value_location from, jit_value_location to);
+    void imul(jit_value_location first, int32_t second, jit_value_location to);
     void idiv(jit_value_location value);
     void neg(jit_value_location value);
     void cqo();
