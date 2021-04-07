@@ -4,8 +4,6 @@
 
 using namespace std;
 
-#define assert_fit_int32(x) assert(static_cast<int32_t>(x) == x)
-
 void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruction) {
     auto op = instruction->op;
     auto first_value = instruction->first;
@@ -128,21 +126,45 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
                         break;
                     }
 
-                    assert_fit_int32(value)
-                    if (op == ir_bin_op::mul) {
-                        builder.imul(first, value, to);
-                        break;
-                    }
+                    if (static_cast<int32_t>(value) == value) {
+                        if (op == ir_bin_op::mul) {
+                            builder.imul(first, value, to);
+                            break;
+                        }
 
-                    if (first != to) {
-                        builder.mov(first, to);
-                    }
-                    switch (op) {
-                        case ir_bin_op::add: builder.add(value, to); break;
-                        case ir_bin_op::sub: builder.sub(value, to); break;
-                        case ir_bin_op::rem:
-                        case ir_bin_op::mul: assert(false) // handled above
+                        if (first != to) {
+                            builder.mov(first, to);
+                        }
+                        switch (op) {
+                            case ir_bin_op::add: builder.add(value, to); break;
+                            case ir_bin_op::sub: builder.sub(value, to); break;
+                            case ir_bin_op::rem:
+                            case ir_bin_op::mul: assert(false) // handled above
                             default_fail
+                        }
+                    } else {
+                        if (op == ir_bin_op::mul) {
+                            if (first != to) {
+                                builder.mov(value, to);
+                                builder.imul(first, to);
+                            } else {
+                                // TODO allocate temp register
+                                builder.mov(value, r11);
+                                builder.imul(r11, to);
+                            }
+                            break;
+                        }
+
+                        if (first != to) {
+                            builder.mov(first, to);
+                        }
+                        switch (op) {
+                            case ir_bin_op::add: assert(false)
+                            case ir_bin_op::sub: assert(false)
+                            case ir_bin_op::rem: assert(false)
+                            case ir_bin_op::mul: assert(false) // handled above
+                            default_fail
+                        }
                     }
                     break;
                 }

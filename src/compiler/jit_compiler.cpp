@@ -147,8 +147,10 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
             case op_iadd:
             case op_isub:
             case op_imul:
+            case op_lmul:
             case op_idiv:
-            case op_irem: {
+            case op_irem:
+            case op_lrem: {
                 auto var2 = pop_stack(locals_count, stack_size);
                 auto var1 = pop_stack(locals_count, stack_size);
                 auto result = allocate_stack(locals_count, stack_size);
@@ -156,9 +158,11 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
                 switch (code[offset]) {
                     case op_iadd: op = ir_bin_op::add; break;
                     case op_isub: op = ir_bin_op::sub; break;
-                    case op_imul: op = ir_bin_op::mul; break;
+                    case op_imul:
+                    case op_lmul: op = ir_bin_op::mul; break;
                     case op_idiv: op = ir_bin_op::div; break;
-                    case op_irem: op = ir_bin_op::rem; break;
+                    case op_irem:
+                    case op_lrem: op = ir_bin_op::rem; break;
                     default: assert(false)
                 }
                 ir.bin_op(var1, var2, result, op);
