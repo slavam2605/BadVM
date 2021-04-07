@@ -351,6 +351,30 @@ const uint8_t* ir_compiler::compile_ssa() {
                     compile_bin_op(instruction);
                     break;
                 }
+                case ir_instruction_tag::convert: {
+                    auto instruction = static_pointer_cast<ir_convert_instruction>(item);
+                    auto from = instruction->from;
+                    auto to_reg = reg_list[color[instruction->to]];
+                    if (from.mode != ir_value_mode::var) {
+                        assert(false)
+                    }
+                    auto from_reg = reg_list[color[from.var]];
+
+                    switch (instruction->mode) {
+                        case ir_convert_mode::i2l: {
+                            // TODO replace reg_list[color[...]] with a proper way to get a register with fitting size
+                            auto from32 = jit_value_location(from_reg, 32);
+                            builder.movsx(from32, to_reg);
+                            break;
+                        }
+                        case ir_convert_mode::l2i: {
+                            compile_assign(from, to_reg);
+                            break;
+                        }
+                        default_fail
+                    }
+                    break;
+                }
                 case ir_instruction_tag::cmp_jump: {
                     auto instruction = static_pointer_cast<ir_cmp_jump_instruction>(item);
                     auto first = instruction->first;

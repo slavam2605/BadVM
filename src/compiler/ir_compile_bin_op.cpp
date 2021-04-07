@@ -24,6 +24,7 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
         case ir_bin_op::sub:
         case ir_bin_op::div:
         case ir_bin_op::rem:
+        case ir_bin_op::cmp:
             break;
             default_fail
     }
@@ -85,7 +86,17 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
                             }
                             break;
                         }
-                            default_fail
+                        case ir_bin_op::cmp: {
+                            // TODO allocate temp registers
+                            builder.cmp(first, second);
+                            builder.mov(0, to);
+                            builder.mov(1, r11);
+                            builder.cmovg(r11, to);
+                            builder.mov(-1, r11);
+                            builder.cmovl(r11, to);
+                            break;
+                        }
+                        default_fail
                     }
                     break;
                 }

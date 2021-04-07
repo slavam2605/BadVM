@@ -94,6 +94,20 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
                 }
                 break;
             }
+            case op_ldc2_w: {
+                read_byte2(index)
+                auto& entry = current_class->constant_pool[index - 1];
+                switch (entry.tag) {
+                    case constant_pool_tag::CONSTANT_Long: {
+                        auto value = *reinterpret_cast<jvm_long*>(entry.info);
+                        ir.assign(ir_value(value), allocate_stack(locals_count, stack_size));
+                        break;
+                    }
+                    default:
+                        throw runtime_error("Unsupported ldc2_w parameter");
+                }
+                break;
+            }
             case op_bipush: {
                 read_byte1(value)
                 ir.assign(ir_value((int8_t) value), allocate_stack(locals_count, stack_size));
@@ -113,6 +127,10 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
             case op_iload_1: ir.assign(get_local(1), allocate_stack(locals_count, stack_size)); break;
             case op_iload_2: ir.assign(get_local(2), allocate_stack(locals_count, stack_size)); break;
             case op_iload_3: ir.assign(get_local(3), allocate_stack(locals_count, stack_size)); break;
+            case op_lload_0: ir.assign(get_local(0), allocate_stack(locals_count, stack_size)); break;
+            case op_lload_1: ir.assign(get_local(1), allocate_stack(locals_count, stack_size)); break;
+            case op_lload_2: ir.assign(get_local(2), allocate_stack(locals_count, stack_size)); break;
+            case op_lload_3: ir.assign(get_local(3), allocate_stack(locals_count, stack_size)); break;
             case op_istore: {
                 read_byte1(index)
                 ir.assign(pop_stack(locals_count, stack_size), get_local(index));
@@ -122,6 +140,10 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
             case op_istore_1: ir.assign(pop_stack(locals_count, stack_size), get_local(1)); break;
             case op_istore_2: ir.assign(pop_stack(locals_count, stack_size), get_local(2)); break;
             case op_istore_3: ir.assign(pop_stack(locals_count, stack_size), get_local(3)); break;
+            case op_lstore_0: ir.assign(pop_stack(locals_count, stack_size), get_local(0)); break;
+            case op_lstore_1: ir.assign(pop_stack(locals_count, stack_size), get_local(1)); break;
+            case op_lstore_2: ir.assign(pop_stack(locals_count, stack_size), get_local(2)); break;
+            case op_lstore_3: ir.assign(pop_stack(locals_count, stack_size), get_local(3)); break;
             case op_iadd:
             case op_isub:
             case op_imul:
@@ -142,11 +164,31 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
                 ir.bin_op(var1, var2, result, op);
                 break;
             }
+            case op_i2l:
+            case op_l2i: {
+                auto var = pop_stack(locals_count, stack_size);
+                auto result = allocate_stack(locals_count, stack_size);
+                ir_convert_mode mode;
+                switch (code[offset]) {
+                    case op_i2l: mode = ir_convert_mode::i2l; break;
+                    case op_l2i: mode = ir_convert_mode::l2i; break;
+                    default_fail
+                }
+                ir.convert(var, result, mode);
+                break;
+            }
             case op_iinc: {
                 read_byte1(index)
                 read_byte1(param)
                 auto var = get_local(index);
                 ir.bin_op(var, ir_value(param), var, ir_bin_op::add);
+                break;
+            }
+            case op_lcmp: {
+                auto var2 = pop_stack(locals_count, stack_size);
+                auto var1 = pop_stack(locals_count, stack_size);
+                auto result = allocate_stack(locals_count, stack_size);
+                ir.bin_op(var1, var2, result, ir_bin_op::cmp);
                 break;
             }
             case op_if_icmpeq:

@@ -61,7 +61,7 @@ namespace std {
 }
 
 enum class ir_instruction_tag {
-    assign, bin_op, cmp_jump, jump, ret, phi
+    assign, bin_op, cmp_jump, convert, jump, ret, phi
 };
 
 struct ir_instruction {
@@ -85,7 +85,7 @@ struct ir_assign_instruction : ir_instruction {
 };
 
 enum class ir_bin_op {
-    add, sub, mul, div, rem
+    add, sub, mul, div, rem, cmp
 };
 
 struct ir_bin_op_insruction : ir_instruction {
@@ -116,6 +116,22 @@ struct ir_cmp_jump_instruction : ir_instruction {
 
     std::vector<ir_label> get_jump_labels() const override { return {label_true, label_false}; }
     std::vector<ir_value*> get_in_values() override { return {&first, &second}; }
+};
+
+enum class ir_convert_mode {
+    i2l, l2i
+};
+
+struct ir_convert_instruction : ir_instruction {
+    ir_value from;
+    ir_variable to;
+    ir_convert_mode mode;
+
+    ir_convert_instruction(const ir_value& from, const ir_variable& to, ir_convert_mode mode)
+            : ir_instruction(ir_instruction_tag::convert), from(from), to(to), mode(mode) {}
+
+    std::vector<ir_value*> get_in_values() override { return {&from}; }
+    std::vector<ir_variable*> get_out_variables() override { return {&to}; }
 };
 
 struct ir_jump_instruction : ir_instruction {

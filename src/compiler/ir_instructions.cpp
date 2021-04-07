@@ -11,6 +11,10 @@ void ir_compiler::bin_op(ir_value first, ir_value second, ir_variable to, ir_bin
     ir.push_back(make_shared<ir_bin_op_insruction>(first, second, to, op));
 }
 
+void ir_compiler::convert(ir_value from, ir_variable to, ir_convert_mode mode) {
+    ir.push_back(make_shared<ir_convert_instruction>(from, to, mode));
+}
+
 void ir_compiler::cmp_jump(ir_value first, ir_value second, ir_cmp_mode mode, ir_label label_true, ir_label label_false) {
     ir.push_back(make_shared<ir_cmp_jump_instruction>(first, second, mode, label_true, label_false));
 }

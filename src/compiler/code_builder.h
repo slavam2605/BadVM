@@ -18,15 +18,24 @@ std::ostream& operator<<(std::ostream& stream, const jit_register64& reg);
 struct jit_value_location {
     jit_register64 reg;
     int32_t stack_offset;
+    int bit_size;
     
     jit_value_location(jit_register64 reg) {
         this->reg = reg;
         this->stack_offset = 0;
+        this->bit_size = 64;
     }
 
-    jit_value_location(int32_t stack_offset) {
+    jit_value_location(jit_register64 reg, int bit_size) {
+        this->reg = reg;
+        this->stack_offset = 0;
+        this->bit_size = bit_size;
+    }
+
+    jit_value_location(int32_t stack_offset, int bit_size) {
         this->reg = jit_register64::no_register;
         this->stack_offset = stack_offset;
+        this->bit_size = bit_size;
     }
 
     bool operator==(const jit_value_location& other) const;
@@ -58,6 +67,9 @@ public:
 
     void mov(jit_value_location from, jit_value_location to);
     void mov(int64_t from, jit_value_location to);
+    void movsx(jit_value_location from, jit_value_location to);
+    void cmovl(jit_value_location from, jit_value_location to);
+    void cmovg(jit_value_location from, jit_value_location to);
     void add(jit_value_location from, jit_value_location to);
     void add(int32_t from, jit_value_location to);
     void sub(jit_value_location from, jit_value_location to);

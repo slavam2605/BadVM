@@ -39,9 +39,21 @@ ostream& operator<<(ostream& stream, const shared_ptr<ir_instruction>& item) {
                 case ir_bin_op::mul: stream << " * "; break;
                 case ir_bin_op::div: stream << " / "; break;
                 case ir_bin_op::rem: stream << " % "; break;
+                case ir_bin_op::cmp: stream << " compare "; break;
                 default: assert(false)
             }
             stream << instruction->second << endl;
+            break;
+        }
+        case ir_instruction_tag::convert: {
+            auto instruction = static_pointer_cast<ir_convert_instruction>(item);
+            stream << instruction->to << " = ";
+            switch (instruction->mode) {
+                case ir_convert_mode::i2l: stream << "(long) "; break;
+                case ir_convert_mode::l2i: stream << "(int) "; break;
+                default_fail
+            }
+            stream << instruction->from << endl;
             break;
         }
         case ir_instruction_tag::cmp_jump: {

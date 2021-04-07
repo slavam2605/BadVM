@@ -171,6 +171,15 @@ void ir_compiler::color_variables() {
     for (int i = 1; i < reg_list.size(); i++) {
         reg_to_color[reg_list[i]] = i;
     }
+    unordered_set<ir_variable> all_variables;
+    for (const auto& block : blocks) {
+        for (const auto& item : block.ir) {
+            for (const auto& var : item->get_out_variables()) {
+                all_variables.insert(*var);
+            }
+        }
+    }
+
     cout << endl << "---- Coloring preference ----" << endl;
     for (const auto& [var, pref_set] : reg_preference) {
         unordered_set<int> used_colors;
@@ -190,11 +199,11 @@ void ir_compiler::color_variables() {
         assert(used_colors.find(color[var]) == used_colors.end())
     }
 
-    for (const auto& [var, set] : interference_graph) {
+    for (const auto& var : all_variables) {
         if (color[var] != 0) continue;
 
         unordered_set<int> used_colors;
-        for (const auto& other_var : set) {
+        for (const auto& other_var : interference_graph[var]) {
             used_colors.insert(color[other_var]);
         }
         for (const auto& target_var : color_preference[var]) {

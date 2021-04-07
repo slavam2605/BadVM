@@ -17,24 +17,56 @@ using namespace std;
 #endif
 
 ostream& operator<<(ostream& stream, const jit_value_location& loc) {
-    switch (loc.reg) {
-        case jit_register64::rax: stream << "rax"; break;
-        case jit_register64::rbx: stream << "rbx"; break;
-        case jit_register64::rcx: stream << "rcx"; break;
-        case jit_register64::rdx: stream << "rdx"; break;
-        case jit_register64::rsp: stream << "rsp"; break;
-        case jit_register64::rbp: stream << "rbp"; break;
-        case jit_register64::rsi: stream << "rsi"; break;
-        case jit_register64::rdi: stream << "rdi"; break;
-        case jit_register64::r8:  stream << "r8";  break;
-        case jit_register64::r9:  stream << "r9";  break;
-        case jit_register64::r10: stream << "r10"; break;
-        case jit_register64::r11: stream << "r11"; break;
-        case jit_register64::r12: stream << "r12"; break;
-        case jit_register64::r13: stream << "r13"; break;
-        case jit_register64::r14: stream << "r14"; break;
-        case jit_register64::r15: stream << "r15"; break;
-        case jit_register64::no_register: stream << "[stack offset = " << loc.stack_offset << "]"; break;
+    if (loc.reg == jit_register64::no_register) {
+        return stream << "[stack offset = " << loc.stack_offset << ", size = " << loc.bit_size << " bits]";
+    }
+
+    switch (loc.bit_size) {
+        case 64: {
+            switch (loc.reg) {
+                case jit_register64::rax: stream << "rax"; break;
+                case jit_register64::rbx: stream << "rbx"; break;
+                case jit_register64::rcx: stream << "rcx"; break;
+                case jit_register64::rdx: stream << "rdx"; break;
+                case jit_register64::rsp: stream << "rsp"; break;
+                case jit_register64::rbp: stream << "rbp"; break;
+                case jit_register64::rsi: stream << "rsi"; break;
+                case jit_register64::rdi: stream << "rdi"; break;
+                case jit_register64::r8:  stream << "r8";  break;
+                case jit_register64::r9:  stream << "r9";  break;
+                case jit_register64::r10: stream << "r10"; break;
+                case jit_register64::r11: stream << "r11"; break;
+                case jit_register64::r12: stream << "r12"; break;
+                case jit_register64::r13: stream << "r13"; break;
+                case jit_register64::r14: stream << "r14"; break;
+                case jit_register64::r15: stream << "r15"; break;
+                default_fail
+            }
+            break;
+        }
+        case 32: {
+            switch (loc.reg) {
+                case jit_register64::rax: stream << "eax"; break;
+                case jit_register64::rbx: stream << "ebx"; break;
+                case jit_register64::rcx: stream << "ecx"; break;
+                case jit_register64::rdx: stream << "edx"; break;
+                case jit_register64::rsp: stream << "esp"; break;
+                case jit_register64::rbp: stream << "ebp"; break;
+                case jit_register64::rsi: stream << "esi"; break;
+                case jit_register64::rdi: stream << "edi"; break;
+                case jit_register64::r8:  stream << "r8d";  break;
+                case jit_register64::r9:  stream << "r9d";  break;
+                case jit_register64::r10: stream << "r10d"; break;
+                case jit_register64::r11: stream << "r11d"; break;
+                case jit_register64::r12: stream << "r12d"; break;
+                case jit_register64::r13: stream << "r13d"; break;
+                case jit_register64::r14: stream << "r14d"; break;
+                case jit_register64::r15: stream << "r15d"; break;
+                default_fail
+            }
+            break;
+        }
+        default_fail
     }
     return stream;
 }
@@ -151,13 +183,57 @@ void code_builder::mov(jit_value_location from, jit_value_location to) {
 
 void code_builder::mov(int64_t from, jit_value_location to) {
     log(cout << "    mov " << to << ", " << from << endl;)
-    assert(to.reg != jit_register64::no_register)
     auto rex = REX_W;
     auto reg_index = get_register_index_long(rex, REX_B, to.reg);
 
     code.push_back(rex);
     code.push_back(0xB8 | reg_index);
     push_imm64(from);
+}
+
+void movsx32_64(vector<uint8_t>& code, jit_value_location from, jit_value_location to) {
+    auto rex = REX_W;
+    auto mod_rm = create_mod_rm(rex, from, to);
+
+    code.push_back(rex);
+    code.push_back(0x63);
+    code.push_back(mod_rm);
+}
+
+void code_builder::movsx(jit_value_location from, jit_value_location to) {
+    log(cout << "    movsx " << to << ", " << from << endl;)
+    switch (to.bit_size) {
+        case 64: {
+            switch (from.bit_size) {
+                case 32: movsx32_64(code, from, to); break;
+                default_fail
+            }
+            break;
+        }
+        default_fail
+    }
+}
+
+void code_builder::cmovl(jit_value_location from, jit_value_location to) {
+    log(cout << "    cmovl " << to << ", " << from << endl;)
+    auto rex = REX_W;
+    auto mod_rm = create_mod_rm(rex, from, to);
+
+    code.push_back(rex);
+    code.push_back(0x0F);
+    code.push_back(0x4C);
+    code.push_back(mod_rm);
+}
+
+void code_builder::cmovg(jit_value_location from, jit_value_location to) {
+    log(cout << "    cmovg " << to << ", " << from << endl;)
+    auto rex = REX_W;
+    auto mod_rm = create_mod_rm(rex, from, to);
+
+    code.push_back(rex);
+    code.push_back(0x0F);
+    code.push_back(0x4F);
+    code.push_back(mod_rm);
 }
 
 void code_builder::add(jit_value_location from, jit_value_location to) {

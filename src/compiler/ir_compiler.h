@@ -56,6 +56,7 @@ public:
 
     void assign(ir_value from, ir_variable to);
     void bin_op(ir_value first, ir_value second, ir_variable to, ir_bin_op op);
+    void convert(ir_value from, ir_variable to, ir_convert_mode mode);
     void cmp_jump(ir_value first, ir_value second, ir_cmp_mode mode, ir_label label_true, ir_label label_false);
     void jump(ir_label label);
     void ret(ir_value value);
