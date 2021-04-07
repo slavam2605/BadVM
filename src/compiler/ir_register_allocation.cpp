@@ -26,6 +26,15 @@ void ir_compiler::calculate_color_preferences() {
                     auto second = instruction->second;
                     auto to = instruction->to;
                     switch (instruction->op) {
+                        case ir_bin_op::add:
+                        case ir_bin_op::sub:
+                        case ir_bin_op::mul: {
+                            if (first.mode == ir_value_mode::var) {
+                                score[to][first.var]++;
+                                score[first.var][to]++;
+                            }
+                            break;
+                        }
                         case ir_bin_op::rem: {
                             if (first.mode == ir_value_mode::var) {
                                 reg_preference[first.var].insert(rax);
