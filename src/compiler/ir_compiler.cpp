@@ -268,12 +268,42 @@ bool remove_unused_blocks(vector<ir_basic_block>& blocks) {
     return true;
 }
 
+bool combine_compare_jump(vector<ir_basic_block>& blocks) {
+    bool changed = false;
+    unordered_map<ir_variable, pair<ir_value, ir_value>> compare_assigns;
+    for (const auto& block : blocks) {
+        for (const auto& item : block.ir) {
+            if (item->tag != ir_instruction_tag::bin_op) continue;
+            auto instruction = static_pointer_cast<ir_bin_op_insruction>(item);
+            if (instruction->op != ir_bin_op::cmp) continue;
+            compare_assigns.insert_or_assign(instruction->to, make_pair(instruction->first, instruction->second));
+        }
+    }
+
+    for (auto& block : blocks) {
+        for (int i = 0; i < block.ir.size(); i++) {
+            const auto& item = block.ir[i];
+            if (item->tag != ir_instruction_tag::cmp_jump) continue;
+            auto instruction = static_pointer_cast<ir_cmp_jump_instruction>(item);
+            if (instruction->first.mode != ir_value_mode::var) continue;
+            auto iter = compare_assigns.find(instruction->first.var);
+            if (iter == compare_assigns.end()) continue;
+            auto [new_first, new_second] = iter->second;
+            block.ir[i] = make_shared<ir_cmp_jump_instruction>(new_first, new_second, instruction->mode,
+                                                               instruction->label_true, instruction->label_false);
+            changed = true;
+        }
+    }
+    return changed;
+}
+
 void ir_compiler::optimize() {
     bool changed = true;
     while (changed) {
         changed = false;
         changed |= simplify_instructions(blocks);
         changed |= inline_assigns(blocks);
+        changed |= combine_compare_jump(blocks);
         changed |= eliminate_trivial_phi(blocks);
         changed |= remove_unused_vars(blocks);
         changed |= remove_unused_blocks(blocks);
