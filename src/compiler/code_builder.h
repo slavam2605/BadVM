@@ -19,7 +19,9 @@ struct jit_value_location {
     jit_register64 reg;
     int32_t stack_offset;
     int bit_size;
-    
+
+    jit_value_location() : reg(jit_register64::no_register), stack_offset(0), bit_size(0) {}
+
     jit_value_location(jit_register64 reg) {
         this->reg = reg;
         this->stack_offset = 0;
@@ -39,6 +41,7 @@ struct jit_value_location {
     }
 
     bool operator==(const jit_value_location& other) const;
+    bool operator!=(const jit_value_location& other) const;
 };
 
 struct fix_jump_entry {

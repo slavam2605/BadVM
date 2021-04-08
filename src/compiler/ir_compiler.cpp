@@ -7,6 +7,16 @@
 
 using namespace std;
 
+namespace std {
+    template<>
+    struct hash<jit_value_location> {
+        size_t operator()(const jit_value_location& location) const {
+            return hash<jit_register64>()(location.reg) * 1000000 +
+                    location.stack_offset * 1000 + location.bit_size;
+        }
+    };
+}
+
 ir_compiler::ir_compiler(code_manager& manager)
         : manager(manager), reg_list{jit_register64::no_register, rax, rcx, rdx, r8, r9/*, r10, r11*/} {}
 
@@ -22,6 +32,15 @@ ir_label ir_compiler::create_label() {
 
 void ir_compiler::add_label(ir_label label, int ir_offset) {
     offset_to_label.insert_or_assign(ir_offset, label);
+}
+
+jit_value_location ir_compiler::get_location(const ir_variable& var) {
+    auto reg = reg_list[color[var]];
+    switch (var.type) {
+        case ir_variable_type::ir_int: return jit_value_location(reg, 32);
+        case ir_variable_type::ir_long: return jit_value_location(reg);
+        default_fail
+    }
 }
 
 void ir_compiler::convert_to_ssa() {
@@ -266,10 +285,10 @@ void ir_compiler::optimize() {
     }
 }
 
-void ir_compiler::compile_phi_dfs(const jit_register64& start, int version,
-                                  const unordered_map<jit_register64, unordered_set<jit_register64>>& assign_from_map,
-                                  unordered_map<jit_register64, int>& visited_version,
-                                  unordered_map<jit_register64, jit_register64>& temp) {
+void ir_compiler::compile_phi_dfs(const jit_value_location& start, int version,
+                                  const unordered_map<jit_value_location, unordered_set<jit_value_location>>& assign_from_map,
+                                  unordered_map<jit_value_location, int>& visited_version,
+                                  unordered_map<jit_value_location, jit_value_location>& temp) {
     auto iter = visited_version.find(start);
     if (iter != visited_version.end()) {
         auto found_version = iter->second;
@@ -295,8 +314,8 @@ void ir_compiler::compile_phi_dfs(const jit_register64& start, int version,
 
 void ir_compiler::compile_phi_before_jump(const ir_label& current_label, const ir_basic_block* target_block) {
 //    cout << "L" << current_label.id << "_PHI_BLOCK:" << endl;
-    unordered_map<jit_register64, unordered_set<jit_register64>> assign_from_map;
-    vector<pair<jit_register64, ir_value>> not_var_assign_list;
+    unordered_map<jit_value_location, unordered_set<jit_value_location>> assign_from_map;
+    vector<pair<jit_value_location, ir_value>> not_var_assign_list;
 
     for (const auto& item : target_block->ir) {
         if (item->tag != ir_instruction_tag::phi) break; // assume all phi's are in the beginning of a block
@@ -304,13 +323,13 @@ void ir_compiler::compile_phi_before_jump(const ir_label& current_label, const i
         for (const auto& [a_label, value] : instruction->edges) {
             if (a_label != current_label) continue;
             if (value.mode == ir_value_mode::var) {
-                auto from_reg = reg_list[color[value.var]];
-                auto to_reg = reg_list[color[instruction->to]];
-                if (from_reg != to_reg) {
-                    assign_from_map[from_reg].insert(to_reg);
+                auto from_loc = get_location(value.var);
+                auto to_loc = get_location(instruction->to);
+                if (from_loc != to_loc) {
+                    assign_from_map[from_loc].insert(to_loc);
                 }
             } else {
-                not_var_assign_list.emplace_back(reg_list[color[instruction->to]], value);
+                not_var_assign_list.emplace_back(get_location(instruction->to), value);
             }
             break;
         }
@@ -318,8 +337,8 @@ void ir_compiler::compile_phi_before_jump(const ir_label& current_label, const i
 
     // TODO add cycle detection and resolution
     int version = 0;
-    unordered_map<jit_register64, int> visited_version;
-    unordered_map<jit_register64, jit_register64> temp;
+    unordered_map<jit_value_location, int> visited_version;
+    unordered_map<jit_value_location, jit_value_location> temp;
     for (const auto& [from, _] : assign_from_map) {
         temp.clear();
         compile_phi_dfs(from, version, assign_from_map, visited_version, temp);
@@ -341,7 +360,7 @@ const uint8_t* ir_compiler::compile_ssa() {
             switch (item->tag) {
                 case ir_instruction_tag::assign: {
                     auto instruction = static_pointer_cast<ir_assign_instruction>(item);
-                    auto to = reg_list[color[instruction->to]];
+                    auto to = get_location(instruction->to);
                     auto from_value = instruction->from;
                     compile_assign(from_value, to);
                     break;
@@ -354,21 +373,20 @@ const uint8_t* ir_compiler::compile_ssa() {
                 case ir_instruction_tag::convert: {
                     auto instruction = static_pointer_cast<ir_convert_instruction>(item);
                     auto from = instruction->from;
-                    auto to_reg = reg_list[color[instruction->to]];
+                    auto to_loc = get_location(instruction->to);
                     if (from.mode != ir_value_mode::var) {
                         assert(false)
                     }
-                    auto from_reg = reg_list[color[from.var]];
+                    auto from_loc = get_location(from.var);
 
                     switch (instruction->mode) {
                         case ir_convert_mode::i2l: {
-                            // TODO replace reg_list[color[...]] with a proper way to get a register with fitting size
-                            auto from32 = jit_value_location(from_reg, 32);
-                            builder.movsx(from32, to_reg);
+                            assert(from_loc.bit_size == 32)
+                            builder.movsx(from_loc, to_loc);
                             break;
                         }
                         case ir_convert_mode::l2i: {
-                            compile_assign(from, to_reg);
+                            compile_assign(from, to_loc);
                             break;
                         }
                         default_fail
@@ -381,17 +399,17 @@ const uint8_t* ir_compiler::compile_ssa() {
                     auto second = instruction->second;
                     // TODO implement cmp with imm
                     if (first.mode == ir_value_mode::var) {
-                        auto first_reg = reg_list[color[first.var]];
+                        auto first_loc = get_location(first.var);
                         switch (second.mode) {
                             case ir_value_mode::var: {
-                                auto second_reg = reg_list[color[second.var]];
-                                builder.cmp(first_reg, second_reg);
+                                auto second_loc = get_location(second.var);
+                                builder.cmp(first_loc, second_loc);
                                 break;
                             }
                             case ir_value_mode::int64: {
                                 auto second_value = second.value;
                                 assert_fit_int32(second_value)
-                                builder.cmp(first_reg, second_value);
+                                builder.cmp(first_loc, second_value);
                                 break;
                             }
                             default_fail
@@ -434,7 +452,7 @@ const uint8_t* ir_compiler::compile_ssa() {
                     auto instruction = static_pointer_cast<ir_ret_instruction>(item);
                     switch (instruction->value.mode) {
                         case ir_value_mode::var: {
-                            auto from = reg_list[color[instruction->value.var]];
+                            auto from = get_location(instruction->value.var);
                             if (from != rax) {
                                 builder.mov(from, rax);
                             }
@@ -470,15 +488,15 @@ const uint8_t* ir_compiler::compile_ssa() {
     return code_chunk;
 }
 
-void ir_compiler::compile_assign(const jit_register64& from, const jit_register64& to) {
+void ir_compiler::compile_assign(const jit_value_location& from, const jit_value_location& to) {
     if (from == to) return;
     builder.mov(from, to);
 }
 
-void ir_compiler::compile_assign(const ir_value& from_value, const jit_register64& to) {
+void ir_compiler::compile_assign(const ir_value& from_value, const jit_value_location& to) {
     switch (from_value.mode) {
         case ir_value_mode::var: {
-            auto from = reg_list[color[from_value.var]];
+            auto from = get_location(from_value.var);
             compile_assign(from, to);
             break;
         }

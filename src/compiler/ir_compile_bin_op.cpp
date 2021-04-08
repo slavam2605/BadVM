@@ -8,13 +8,13 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
     auto op = instruction->op;
     auto first_value = instruction->first;
     auto second_value = instruction->second;
-    auto to = reg_list[color[instruction->to]];
+    auto to = get_location(instruction->to);
     switch (op) {
         case ir_bin_op::add:
         case ir_bin_op::mul: {
             if ((first_value.mode != ir_value_mode::var && second_value.mode == ir_value_mode::var) ||
                 (first_value.mode == ir_value_mode::var && second_value.mode == ir_value_mode::var &&
-                 reg_list[color[second_value.var]] == to)) {
+                        get_location(second_value.var) == to)) {
                 swap(first_value, second_value);
             }
             break;
@@ -29,10 +29,10 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
 
     switch (first_value.mode) {
         case ir_value_mode::var: {
-            auto first = reg_list[color[first_value.var]];
+            auto first = get_location(first_value.var);
             switch (second_value.mode) {
                 case ir_value_mode::var: {
-                    auto second = reg_list[color[second_value.var]];
+                    auto second = get_location(second_value.var);
                     switch (op) {
                         case ir_bin_op::add: {
                             if (first == to) {
@@ -76,10 +76,10 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
                             builder.cqo();
                             builder.idiv(second == rax ? r10 : (second == rdx ? r11 : second));
                             compile_assign(rdx, to);
-                            if (rax != to) {
+                            if (to != rax) {
                                 builder.mov(r10, rax);
                             }
-                            if (rdx != to) {
+                            if (to != rdx) {
                                 builder.mov(r11, rdx);
                             }
                             break;
@@ -117,10 +117,10 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
                         builder.mov(value, temp);
                         builder.idiv(temp);
                         compile_assign(rdx, to);
-                        if (rax != to) {
+                        if (to != rax) {
                             builder.mov(r10, rax);
                         }
-                        if (rdx != to) {
+                        if (to != rdx) {
                             builder.mov(r11, rdx);
                         }
                         break;

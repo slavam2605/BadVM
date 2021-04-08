@@ -76,7 +76,11 @@ std::ostream& operator<<(std::ostream& stream, const jit_register64& reg) {
 }
 
 bool jit_value_location::operator==(const jit_value_location& other) const {
-    return reg == other.reg && stack_offset == other.stack_offset;
+    return reg == other.reg && stack_offset == other.stack_offset && bit_size == other.bit_size;
+}
+
+bool jit_value_location::operator!=(const jit_value_location& other) const {
+    return !(*this == other);
 }
 
 const vector<uint8_t>& code_builder::get_code() const {
