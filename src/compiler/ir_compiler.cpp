@@ -46,15 +46,15 @@ void ir_compiler::convert_to_ssa() {
         block.ir.push_back(ir[ir_offset]);
     }
 
-    unordered_set<int> all_var_ids;
+    unordered_map<int, ir_variable_type> all_var_ids;
     for (const auto& block : blocks) {
         for (int i = 0; i < block.ir.size(); i++) {
             for (const auto& value : block.ir[i]->get_in_values()) {
                 if (value->mode != ir_value_mode::var) continue;
-                all_var_ids.insert(value->var.id);
+                all_var_ids[value->var.id] = value->var.type;
             }
             for (const auto& var : block.ir[i]->get_out_variables()) {
-                all_var_ids.insert(var->id);
+                all_var_ids[var->id] = var->type;
             }
 
             const auto& jump_labels = block.ir[i]->get_jump_labels();
@@ -71,12 +71,12 @@ void ir_compiler::convert_to_ssa() {
 
     unordered_map<int, int> last_var_version;
     for (auto& block : blocks) {
-        for (const auto& var_id : all_var_ids) {
+        for (const auto& [var_id, type] : all_var_ids) {
             vector<pair<ir_label, ir_value>> edges;
             for (const auto& from_label : control_flow_in[block.label]) {
-                edges.emplace_back(from_label, ir_variable(var_id, 0));
+                edges.emplace_back(from_label, ir_variable(var_id, 0, type));
             }
-            block.ir.insert(block.ir.begin(), make_shared<ir_phi_instruction>(edges, ir_variable(var_id, 0)));
+            block.ir.insert(block.ir.begin(), make_shared<ir_phi_instruction>(edges, ir_variable(var_id, 0, type)));
         }
     }
 

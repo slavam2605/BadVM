@@ -4,35 +4,70 @@
 #include "../utils/utils.h"
 #include "../interpreter/opcodes.h"
 #include "register_shortcuts.h"
-#include "jit_type_utils.h"
 #include "ir_compiler.h"
 #include <iostream>
 
 using namespace std;
 
+constexpr auto ir_int = ir_variable_type::ir_int;
+constexpr auto ir_long = ir_variable_type::ir_long;
+
 #define read_byte1(name) uint8_t name = code[++offset];
 #define read_byte2(name) uint8_t name##byte1 = code[++offset]; uint8_t name##byte2 = code[++offset]; uint16_t name = (name##byte1 << 8) | name##byte2;
 
-ir_variable allocate_stack(int locals_count, int& stack_size) {
-    int stack_index = stack_size++;
-    return ir_variable(locals_count + stack_index);
+jit_local_state::jit_local_state(int locals_count, int max_stack_size) {
+    locals.resize(locals_count, ir_variable_type::ir_no_type);
+    this->max_stack_size = max_stack_size;
 }
 
-ir_variable pop_stack(int locals_count, int& stack_size) {
-    int stack_index = --stack_size;
-    return ir_variable(locals_count + stack_index);
+ir_variable jit_local_state::allocate_stack(ir_variable_type type) {
+    auto type_id = static_cast<int>(type);
+    int stack_index = stack.size();
+    stack.push_back(type);
+    return ir_variable((locals.size() + max_stack_size) * type_id + locals.size() + stack_index, type);
 }
 
-ir_variable get_local(int index) {
-    return ir_variable(index);
+ir_variable jit_local_state::pop_stack(ir_variable_type expected_type) {
+    auto type = stack.back();
+    assert(type == expected_type)
+    auto type_id = static_cast<int>(type);
+    stack.pop_back();
+    int stack_index = stack.size();
+    return ir_variable((locals.size() + max_stack_size) * type_id + locals.size() + stack_index, type);
+}
+
+ir_variable jit_local_state::get_local_read(int index, ir_variable_type expected_type) {
+    assert(locals[index] == expected_type)
+    auto type_id = static_cast<int>(locals[index]);
+    return ir_variable((locals.size() + max_stack_size) * type_id + index, locals[index]);
+}
+
+ir_variable jit_local_state::get_local_write(int index, ir_variable_type new_type) {
+    locals[index] = new_type;
+    auto type_id = static_cast<int>(locals[index]);
+    return ir_variable((locals.size() + max_stack_size) * type_id + index, locals[index]);
+}
+
+ir_variable_type to_ir_type(const field_descriptor& descriptor) {
+    switch (descriptor.get_base_type()) {
+        case base_type_descriptor::reference_d: assert(false)
+        case base_type_descriptor::byte_d: assert(false)
+        case base_type_descriptor::char_d: assert(false)
+        case base_type_descriptor::double_d: assert(false)
+        case base_type_descriptor::float_d: assert(false)
+        case base_type_descriptor::int_d: return ir_int;
+        case base_type_descriptor::long_d: return ir_long;
+        case base_type_descriptor::short_d: assert(false)
+        case base_type_descriptor::boolean_d: assert(false)
+        default_fail
+    }
 }
 
 const void* jit_compiler::compile(const class_file* current_class, const method_info& method, const code_attribute_info* code_info) {
     auto descriptor_string = read_utf8_string(current_class, method.descriptor_index);
     auto descriptor = method_descriptor::parse(descriptor_string);
 
-    int locals_count = code_info->max_locals;
-    int stack_size = 0;
+    jit_local_state local_state(code_info->max_locals, code_info->max_stack);
 
 //    vector<jit_register64> arguments_regs {rcx, rdx, r8, r9};
 //    auto local_offset = 0;
@@ -73,20 +108,20 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
 
         switch (code[offset]) {
             case op_nop: break;
-            case op_iconst_m1: ir.assign(ir_value(-1), allocate_stack(locals_count, stack_size)); break;
-            case op_iconst_0: ir.assign(ir_value(0), allocate_stack(locals_count, stack_size)); break;
-            case op_iconst_1: ir.assign(ir_value(1), allocate_stack(locals_count, stack_size)); break;
-            case op_iconst_2: ir.assign(ir_value(2), allocate_stack(locals_count, stack_size)); break;
-            case op_iconst_3: ir.assign(ir_value(3), allocate_stack(locals_count, stack_size)); break;
-            case op_iconst_4: ir.assign(ir_value(4), allocate_stack(locals_count, stack_size)); break;
-            case op_iconst_5: ir.assign(ir_value(5), allocate_stack(locals_count, stack_size)); break;
+            case op_iconst_m1: ir.assign(ir_value(-1), local_state.allocate_stack(ir_int)); break;
+            case op_iconst_0: ir.assign(ir_value(0), local_state.allocate_stack(ir_int)); break;
+            case op_iconst_1: ir.assign(ir_value(1), local_state.allocate_stack(ir_int)); break;
+            case op_iconst_2: ir.assign(ir_value(2), local_state.allocate_stack(ir_int)); break;
+            case op_iconst_3: ir.assign(ir_value(3), local_state.allocate_stack(ir_int)); break;
+            case op_iconst_4: ir.assign(ir_value(4), local_state.allocate_stack(ir_int)); break;
+            case op_iconst_5: ir.assign(ir_value(5), local_state.allocate_stack(ir_int)); break;
             case op_ldc: {
                 read_byte1(index)
                 auto& entry = current_class->constant_pool[index - 1];
                 switch (entry.tag) {
                     case constant_pool_tag::CONSTANT_Integer: {
                         auto value = *reinterpret_cast<jvm_int*>(entry.info);
-                        ir.assign(ir_value(value), allocate_stack(locals_count, stack_size));
+                        ir.assign(ir_value(value), local_state.allocate_stack(ir_int));
                         break;
                     }
                     default:
@@ -100,7 +135,7 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
                 switch (entry.tag) {
                     case constant_pool_tag::CONSTANT_Long: {
                         auto value = *reinterpret_cast<jvm_long*>(entry.info);
-                        ir.assign(ir_value(value), allocate_stack(locals_count, stack_size));
+                        ir.assign(ir_value(value), local_state.allocate_stack(ir_long));
                         break;
                     }
                     default:
@@ -110,88 +145,98 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
             }
             case op_bipush: {
                 read_byte1(value)
-                ir.assign(ir_value((int8_t) value), allocate_stack(locals_count, stack_size));
+                ir.assign(ir_value((int8_t) value), local_state.allocate_stack(ir_int));
                 break;
             }
             case op_sipush: {
                 read_byte2(value)
-                ir.assign(ir_value((int16_t) value), allocate_stack(locals_count, stack_size));
+                ir.assign(ir_value((int16_t) value), local_state.allocate_stack(ir_int));
                 break;
             }
             case op_iload: {
                 read_byte1(index)
-                ir.assign(get_local(index), allocate_stack(locals_count, stack_size));
+                ir.assign(local_state.get_local_read(index, ir_int), local_state.allocate_stack(ir_int));
                 break;
             }
-            case op_iload_0: ir.assign(get_local(0), allocate_stack(locals_count, stack_size)); break;
-            case op_iload_1: ir.assign(get_local(1), allocate_stack(locals_count, stack_size)); break;
-            case op_iload_2: ir.assign(get_local(2), allocate_stack(locals_count, stack_size)); break;
-            case op_iload_3: ir.assign(get_local(3), allocate_stack(locals_count, stack_size)); break;
-            case op_lload_0: ir.assign(get_local(0), allocate_stack(locals_count, stack_size)); break;
-            case op_lload_1: ir.assign(get_local(1), allocate_stack(locals_count, stack_size)); break;
-            case op_lload_2: ir.assign(get_local(2), allocate_stack(locals_count, stack_size)); break;
-            case op_lload_3: ir.assign(get_local(3), allocate_stack(locals_count, stack_size)); break;
+            case op_iload_0: ir.assign(local_state.get_local_read(0, ir_int), local_state.allocate_stack(ir_int)); break;
+            case op_iload_1: ir.assign(local_state.get_local_read(1, ir_int), local_state.allocate_stack(ir_int)); break;
+            case op_iload_2: ir.assign(local_state.get_local_read(2, ir_int), local_state.allocate_stack(ir_int)); break;
+            case op_iload_3: ir.assign(local_state.get_local_read(3, ir_int), local_state.allocate_stack(ir_int)); break;
+            case op_lload_0: ir.assign(local_state.get_local_read(0, ir_long), local_state.allocate_stack(ir_long)); break;
+            case op_lload_1: ir.assign(local_state.get_local_read(1, ir_long), local_state.allocate_stack(ir_long)); break;
+            case op_lload_2: ir.assign(local_state.get_local_read(2, ir_long), local_state.allocate_stack(ir_long)); break;
+            case op_lload_3: ir.assign(local_state.get_local_read(3, ir_long), local_state.allocate_stack(ir_long)); break;
             case op_istore: {
                 read_byte1(index)
-                ir.assign(pop_stack(locals_count, stack_size), get_local(index));
+                ir.assign(local_state.pop_stack(ir_int), local_state.get_local_write(index, ir_int));
                 break;
             }
-            case op_istore_0: ir.assign(pop_stack(locals_count, stack_size), get_local(0)); break;
-            case op_istore_1: ir.assign(pop_stack(locals_count, stack_size), get_local(1)); break;
-            case op_istore_2: ir.assign(pop_stack(locals_count, stack_size), get_local(2)); break;
-            case op_istore_3: ir.assign(pop_stack(locals_count, stack_size), get_local(3)); break;
-            case op_lstore_0: ir.assign(pop_stack(locals_count, stack_size), get_local(0)); break;
-            case op_lstore_1: ir.assign(pop_stack(locals_count, stack_size), get_local(1)); break;
-            case op_lstore_2: ir.assign(pop_stack(locals_count, stack_size), get_local(2)); break;
-            case op_lstore_3: ir.assign(pop_stack(locals_count, stack_size), get_local(3)); break;
+            case op_istore_0: ir.assign(local_state.pop_stack(ir_int), local_state.get_local_write(0, ir_int)); break;
+            case op_istore_1: ir.assign(local_state.pop_stack(ir_int), local_state.get_local_write(1, ir_int)); break;
+            case op_istore_2: ir.assign(local_state.pop_stack(ir_int), local_state.get_local_write(2, ir_int)); break;
+            case op_istore_3: ir.assign(local_state.pop_stack(ir_int), local_state.get_local_write(3, ir_int)); break;
+            case op_lstore_0: ir.assign(local_state.pop_stack(ir_long), local_state.get_local_write(0, ir_long)); break;
+            case op_lstore_1: ir.assign(local_state.pop_stack(ir_long), local_state.get_local_write(1, ir_long)); break;
+            case op_lstore_2: ir.assign(local_state.pop_stack(ir_long), local_state.get_local_write(2, ir_long)); break;
+            case op_lstore_3: ir.assign(local_state.pop_stack(ir_long), local_state.get_local_write(3, ir_long)); break;
             case op_iadd:
             case op_isub:
             case op_imul:
-            case op_lmul:
             case op_idiv:
-            case op_irem:
-            case op_lrem: {
-                auto var2 = pop_stack(locals_count, stack_size);
-                auto var1 = pop_stack(locals_count, stack_size);
-                auto result = allocate_stack(locals_count, stack_size);
+            case op_irem: {
+                auto var2 = local_state.pop_stack(ir_int);
+                auto var1 = local_state.pop_stack(ir_int);
+                auto result = local_state.allocate_stack(ir_int);
                 ir_bin_op op;
                 switch (code[offset]) {
                     case op_iadd: op = ir_bin_op::add; break;
                     case op_isub: op = ir_bin_op::sub; break;
-                    case op_imul:
-                    case op_lmul: op = ir_bin_op::mul; break;
+                    case op_imul: op = ir_bin_op::mul; break;
                     case op_idiv: op = ir_bin_op::div; break;
-                    case op_irem:
-                    case op_lrem: op = ir_bin_op::rem; break;
-                    default: assert(false)
+                    case op_irem: op = ir_bin_op::rem; break;
+                    default_fail
                 }
                 ir.bin_op(var1, var2, result, op);
                 break;
             }
-            case op_i2l:
-            case op_l2i: {
-                auto var = pop_stack(locals_count, stack_size);
-                auto result = allocate_stack(locals_count, stack_size);
-                ir_convert_mode mode;
+            case op_lmul:
+            case op_lrem: {
+                auto var2 = local_state.pop_stack(ir_long);
+                auto var1 = local_state.pop_stack(ir_long);
+                auto result = local_state.allocate_stack(ir_long);
+                ir_bin_op op;
                 switch (code[offset]) {
-                    case op_i2l: mode = ir_convert_mode::i2l; break;
-                    case op_l2i: mode = ir_convert_mode::l2i; break;
+                    case op_lmul: op = ir_bin_op::mul; break;
+                    case op_lrem: op = ir_bin_op::rem; break;
                     default_fail
                 }
-                ir.convert(var, result, mode);
+                ir.bin_op(var1, var2, result, op);
+                break;
+            }
+            case op_i2l: {
+                auto var = local_state.pop_stack(ir_int);
+                auto result = local_state.allocate_stack(ir_long);
+                ir.convert(var, result, ir_convert_mode::i2l);
+                break;
+            }
+            case op_l2i: {
+                auto var = local_state.pop_stack(ir_long);
+                auto result = local_state.allocate_stack(ir_int);
+                ir.convert(var, result, ir_convert_mode::l2i);
                 break;
             }
             case op_iinc: {
                 read_byte1(index)
                 read_byte1(param)
-                auto var = get_local(index);
+                // get_local_write is not needed here, because old and new types are the same
+                auto var = local_state.get_local_read(index, ir_int);
                 ir.bin_op(var, ir_value(param), var, ir_bin_op::add);
                 break;
             }
             case op_lcmp: {
-                auto var2 = pop_stack(locals_count, stack_size);
-                auto var1 = pop_stack(locals_count, stack_size);
-                auto result = allocate_stack(locals_count, stack_size);
+                auto var2 = local_state.pop_stack(ir_long);
+                auto var1 = local_state.pop_stack(ir_long);
+                auto result = local_state.allocate_stack(ir_int);
                 ir.bin_op(var1, var2, result, ir_bin_op::cmp);
                 break;
             }
@@ -204,8 +249,8 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
                 uint8_t branchbyte1 = code[offset + 1];
                 uint8_t branchbyte2 = code[offset + 2];
                 int16_t bytecode_offset = (branchbyte1 << 8) | branchbyte2;
-                auto var2 = pop_stack(locals_count, stack_size);
-                auto var1 = pop_stack(locals_count, stack_size);
+                auto var2 = local_state.pop_stack(ir_int);
+                auto var1 = local_state.pop_stack(ir_int);
                 auto target_offset = offset + bytecode_offset;
                 auto iter = bytecode_offset_to_ir.find(target_offset);
                 ir_label label_true = ir.create_label();
@@ -239,7 +284,7 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
                 uint8_t branchbyte1 = code[offset + 1];
                 uint8_t branchbyte2 = code[offset + 2];
                 int16_t bytecode_offset = (branchbyte1 << 8) | branchbyte2;
-                auto var = pop_stack(locals_count, stack_size);
+                auto var = local_state.pop_stack(ir_int);
                 auto target_offset = offset + bytecode_offset;
                 auto iter = bytecode_offset_to_ir.find(target_offset);
                 ir_label label_true = ir.create_label();
@@ -281,7 +326,9 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
                 break;
             }
             case op_ireturn: {
-                ir.ret(pop_stack(locals_count, stack_size));
+                assert(!descriptor.return_void)
+                auto return_type = to_ir_type(descriptor.return_descriptor);
+                ir.ret(local_state.pop_stack(return_type));
                 break;
             }
             default:

@@ -6,12 +6,17 @@
 #include <algorithm>
 #include <ostream>
 
+enum class ir_variable_type {
+    ir_no_type, ir_int, ir_long
+};
+
 struct ir_variable {
     int id, version;
+    ir_variable_type type;
 
-    ir_variable() : id(-1), version(-1) {}
-    explicit ir_variable(int id) : id(id), version(0) {}
-    ir_variable(int id, int version) : id(id), version(version) {}
+    ir_variable() : id(-1), version(-1), type(ir_variable_type::ir_no_type) {}
+    explicit ir_variable(int id, ir_variable_type type) : id(id), version(0), type(type) {}
+    ir_variable(int id, int version, ir_variable_type type) : id(id), version(version), type(type) {}
 
     bool operator==(const ir_variable& rhs) const { return id == rhs.id && version == rhs.version; }
     bool operator!=(const ir_variable& rhs) const { return !(rhs == *this); }

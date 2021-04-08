@@ -1,9 +1,11 @@
 #include "ir_compiler.h"
+#include "../utils/utils.h"
 #include <memory>
 
 using namespace std;
 
 void ir_compiler::assign(ir_value from, ir_variable to) {
+    assert(from.mode != ir_value_mode::var || from.var.type == to.type)
     ir.push_back(make_shared<ir_assign_instruction>(from, to));
 }
 
