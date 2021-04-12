@@ -422,6 +422,18 @@ void code_builder::movsd(double from, jit_value_location to) {
     fix_double_list.emplace_back(current_offset() - 4, current_offset(), from);
 }
 
+void code_builder::subsd(jit_value_location from, jit_value_location to) {
+    log(cout << "    subsd " << to << ", " << from << endl;)
+    auto rex = REX;
+    auto mod_rm = create_mod_rm(rex, from, to);
+
+    code.push_back(0xF2);
+    if (rex != REX) code.push_back(rex);
+    code.push_back(0x0F);
+    code.push_back(0x5C);
+    code.push_back(mod_rm);
+}
+
 void code_builder::addsd(jit_value_location from, jit_value_location to) {
     log(cout << "    addsd " << to << ", " << from << endl;)
     auto rex = REX;

@@ -28,7 +28,20 @@ void ir_compiler::compile_double_bin_op(const std::shared_ptr<ir_bin_op_insructi
                             };
                             break;
                         }
-                        case ir_bin_op::sub: assert(false)
+                        case ir_bin_op::sub: {
+                            if (first == to) {
+                                builder.subsd(second, to);
+                            } else if (second == to) {
+                                // TODO implement negate, do another trick, or allocate temp register properly
+                                builder.movsd(to, xmm5);
+                                builder.movsd(first, to);
+                                builder.subsd(xmm5, to);
+                            } else {
+                                builder.movsd(first, to);
+                                builder.subsd(second, to);
+                            };
+                            break;
+                        }
                         case ir_bin_op::mul: {
                             if (first == to) {
                                 builder.mulsd(second, to);
