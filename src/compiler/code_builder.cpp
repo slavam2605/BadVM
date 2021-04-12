@@ -175,13 +175,10 @@ uint8_t create_mod_rm_reg_digit(uint8_t& rex, jit_value_location rm, uint8_t dig
     return (digit << 3) | 0b11000000 | rm_index;
 }
 
-void code_builder::push_mod_rm_rip_relative_displacement(jit_value_location to, int32_t displacement) {
-    assert(to.reg != jit_register64::no_register)
-    uint8_t rex = 0;
-    uint8_t reg = get_register_index_long(rex, 1, to.reg);
-    assert(rex == 0)
-    code.push_back(0b00000101 | (reg << 3));
-    push_imm32(displacement);
+uint8_t create_mod_rm_rip_relative_displacement(uint8_t& rex, jit_value_location r) {
+    assert(r.reg != jit_register64::no_register)
+    uint8_t reg = get_register_index_long(rex, REX_R, r.reg);
+    return 0b00000101 | (reg << 3);
 }
 
 void code_builder::push_imm64(uint64_t value) {
@@ -413,11 +410,15 @@ void code_builder::movsd(double from, jit_value_location to) {
     if (double_const_offset.find(from) == double_const_offset.end()) {
         double_const_offset[from] = 0;
     }
+    auto rex = REX;
+    auto mod_rm = create_mod_rm_rip_relative_displacement(rex, to);
 
     code.push_back(0xF2);
+    if (rex != REX) code.push_back(rex);
     code.push_back(0x0F);
     code.push_back(0x10);
-    push_mod_rm_rip_relative_displacement(to, 0);
+    code.push_back(mod_rm);
+    push_imm32(0);
 
     fix_double_list.emplace_back(current_offset() - 4, current_offset(), from);
 }
@@ -458,6 +459,24 @@ void code_builder::mulsd(jit_value_location from, jit_value_location to) {
     code.push_back(mod_rm);
 }
 
+void code_builder::comisd(jit_value_location first, double second) {
+    log(cout << "    comisd " << first << ", " << second << endl;)
+    if (double_const_offset.find(second) == double_const_offset.end()) {
+        double_const_offset[second] = 0;
+    }
+    auto rex = REX;
+    auto mod_rm = create_mod_rm_rip_relative_displacement(rex, first);
+
+    code.push_back(0x66);
+    if (rex != REX) code.push_back(rex);
+    code.push_back(0x0F);
+    code.push_back(0x2F);
+    code.push_back(mod_rm);
+    push_imm32(0);
+
+    fix_double_list.emplace_back(current_offset() - 4, current_offset(), second);
+}
+
 void code_builder::je(int label_id) {
     log(cout << "    je L" << label_id << endl;)
     jcc32(0x84, label_id);
@@ -486,6 +505,16 @@ void code_builder::jg(int label_id) {
 void code_builder::jge(int label_id) {
     log(cout << "    jge L" << label_id << endl;)
     jcc32(0x8D, label_id);
+}
+
+void code_builder::ja(int label_id) {
+    log(cout << "    ja L" << label_id << endl;)
+    jcc32(0x87, label_id);
+}
+
+void code_builder::jb(int label_id) {
+    log(cout << "    jb L" << label_id << endl;)
+    jcc32(0x82, label_id);
 }
 
 void code_builder::jmp(int label_id) {

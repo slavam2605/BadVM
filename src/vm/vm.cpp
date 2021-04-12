@@ -26,7 +26,7 @@ void vm::start(const std::string& class_name) {
             continue;
 
         auto method_name = read_utf8_string(main_class, method.name_index);
-        if (method_name == /*TODO "main"*/"dfoo") {
+        if (method_name == /*TODO "main"*/"foo") {
             vector<jvm_value> main_arguments;
 //            main_arguments.push_back(jvm_value::as_reference(0)); TODO bin_op null for main method
             compile_and_invoke(main_class, method, move(main_arguments));
@@ -192,7 +192,7 @@ void vm::compile_and_invoke(const class_file* current_class, const method_info& 
     } else {
         auto code_info = get_code_info(current_class, method);
         auto compiled_fun = compiler.compile(current_class, method, code_info);
-        auto fun_ptr = reinterpret_cast<double (*)()>(const_cast<void*>(compiled_fun));
+        auto fun_ptr = reinterpret_cast<int32_t (*)()>(const_cast<void*>(compiled_fun));
 
 //        benchmark(fun_ptr);
         cout << setprecision(20) << fun_ptr() << endl;

@@ -77,7 +77,6 @@ class code_builder {
     void push_imm64(uint64_t value);
     void write_imm32(int offset, uint32_t value);
     void jcc32(uint8_t opcode, int label_id);
-    void push_mod_rm_rip_relative_displacement(jit_value_location to, int32_t displacement);
 public:
     const std::vector<uint8_t>& get_code() const;
     int current_offset() const;
@@ -106,12 +105,15 @@ public:
     void addsd(jit_value_location from, jit_value_location to);
     void subsd(jit_value_location from, jit_value_location to);
     void mulsd(jit_value_location from, jit_value_location to);
+    void comisd(jit_value_location first, double second);
     void je(int label_id);
     void jne(int label_id);
     void jl(int label_id);
     void jle(int label_id);
     void jg(int label_id);
     void jge(int label_id);
+    void ja(int label_id);
+    void jb(int label_id);
     void jmp(int label_id);
     void ret();
 };

@@ -60,6 +60,30 @@ void ir_compiler::compile_double_bin_op(const std::shared_ptr<ir_bin_op_insructi
                     }
                     break;
                 }
+                case ir_value_mode::float64: {
+                    auto second = second_value.float64_value;
+                    switch (op) {
+                        case ir_bin_op::cmp: {
+                            auto gt_label = create_label();
+                            auto lt_label = create_label();
+                            auto after_label = create_label();
+                            builder.comisd(first, second);
+                            builder.ja(gt_label.id);
+                            builder.jb(lt_label.id);
+                            builder.mov(0, to);
+                            builder.jmp(after_label.id);
+                            builder.mark_label(gt_label.id);
+                            builder.mov(1, to);
+                            builder.jmp(after_label.id);
+                            builder.mark_label(lt_label.id);
+                            builder.mov(-1, to);
+                            builder.mark_label(after_label.id);
+                            break;
+                        }
+                        default_fail
+                    }
+                    break;
+                }
                 default_fail
             }
             break;
