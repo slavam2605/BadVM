@@ -4,7 +4,56 @@
 
 using namespace std;
 
+void ir_compiler::compile_double_bin_op(const std::shared_ptr<ir_bin_op_insruction>& instruction) {
+    auto op = instruction->op;
+    auto first_value = instruction->first;
+    auto second_value = instruction->second;
+    auto to = get_location(instruction->to);
+
+    switch (first_value.mode) {
+        case ir_value_mode::var: {
+            auto first = get_location(first_value.var);
+            switch (second_value.mode) {
+                case ir_value_mode::var: {
+                    auto second = get_location(second_value.var);
+                    switch (op) {
+                        case ir_bin_op::add: assert(false)
+                        case ir_bin_op::sub: assert(false)
+                        case ir_bin_op::mul: {
+                            if (first == to) {
+                                builder.mulsd(second, to);
+                            } else if (second == to) {
+                                builder.mulsd(first, to);
+                            } else {
+                                builder.movsd(first, to);
+                                builder.mulsd(second, to);
+                            };
+                            break;
+                        }
+                        case ir_bin_op::div: assert(false)
+                        case ir_bin_op::rem: assert(false)
+                        case ir_bin_op::cmp: assert(false)
+                        default_fail
+                    }
+                    break;
+                }
+                default_fail
+            }
+            break;
+        }
+        case ir_value_mode::float64: assert(false)
+        default_fail
+    }
+}
+
 void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruction) {
+    if (instruction->first.mode == ir_value_mode::float64 ||
+        (instruction->first.mode == ir_value_mode::var &&
+         get_storage_type(instruction->first.var.type) == ir_storage_type::ir_float)) {
+        compile_double_bin_op(instruction);
+        return;
+    }
+
     auto op = instruction->op;
     auto first_value = instruction->first;
     auto second_value = instruction->second;

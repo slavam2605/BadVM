@@ -198,7 +198,3 @@ void vm::compile_and_invoke(const class_file* current_class, const method_info& 
         cout << setprecision(20) << fun_ptr() << endl;
     }
 }
-
-
-
-

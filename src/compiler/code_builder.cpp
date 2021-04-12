@@ -2,6 +2,7 @@
 #include "../utils/utils.h"
 #include <iostream>
 
+constexpr uint8_t REX   = 0b01000000;
 constexpr uint8_t REX_W = 0b01001000;
 constexpr uint8_t REX_R = 0b01000100;
 constexpr uint8_t REX_X = 0b01000010;
@@ -112,7 +113,7 @@ void code_builder::mark_label(int label_id) {
     label_map[label_id] = current_offset();
 }
 
-uint8_t get_int_register_index_long(uint8_t& rex, uint8_t rex_flag, jit_register64 reg) {
+uint8_t get_register_index_long(uint8_t& rex, uint8_t rex_flag, jit_register64 reg) {
     switch (reg) {
         case jit_register64::rax: return 0b000;
         case jit_register64::rcx: return 0b001;
@@ -130,20 +131,22 @@ uint8_t get_int_register_index_long(uint8_t& rex, uint8_t rex_flag, jit_register
         case jit_register64::r13: rex |= rex_flag; return 0b101;
         case jit_register64::r14: rex |= rex_flag; return 0b110;
         case jit_register64::r15: rex |= rex_flag; return 0b111;
-        default_fail
-    }
-}
-
-uint8_t get_xmm_register_index(jit_register64 reg) {
-    switch (reg) {
-        case jit_register64::xmm0: return 0b000;
-        case jit_register64::xmm1: return 0b001;
-        case jit_register64::xmm2: return 0b010;
-        case jit_register64::xmm3: return 0b011;
-        case jit_register64::xmm4: return 0b100;
-        case jit_register64::xmm5: return 0b101;
-        case jit_register64::xmm6: return 0b110;
-        case jit_register64::xmm7: return 0b111;
+        case jit_register64::xmm0:  return 0b000;
+        case jit_register64::xmm1:  return 0b001;
+        case jit_register64::xmm2:  return 0b010;
+        case jit_register64::xmm3:  return 0b011;
+        case jit_register64::xmm4:  return 0b100;
+        case jit_register64::xmm5:  return 0b101;
+        case jit_register64::xmm6:  return 0b110;
+        case jit_register64::xmm7:  return 0b111;
+        case jit_register64::xmm8:  rex |= rex_flag; return 0b000;
+        case jit_register64::xmm9:  rex |= rex_flag; return 0b001;
+        case jit_register64::xmm10: rex |= rex_flag; return 0b010;
+        case jit_register64::xmm11: rex |= rex_flag; return 0b011;
+        case jit_register64::xmm12: rex |= rex_flag; return 0b100;
+        case jit_register64::xmm13: rex |= rex_flag; return 0b101;
+        case jit_register64::xmm14: rex |= rex_flag; return 0b110;
+        case jit_register64::xmm15: rex |= rex_flag; return 0b111;
         default_fail
     }
 }
@@ -154,8 +157,8 @@ uint8_t create_mod_rm(uint8_t& rex, jit_value_location rm, jit_value_location r)
     assert(first_reg != jit_register64::no_register)
     assert(second_reg != jit_register64::no_register)
 
-    auto rm_index = get_int_register_index_long(rex, REX_B, first_reg);
-    auto reg_index = get_int_register_index_long(rex, REX_R, second_reg);
+    auto rm_index = get_register_index_long(rex, REX_B, first_reg);
+    auto reg_index = get_register_index_long(rex, REX_R, second_reg);
 
     uint8_t reg, mod_rm;
     mod_rm = 0b11000000 | rm_index;
@@ -167,14 +170,16 @@ uint8_t create_mod_rm_reg_digit(uint8_t& rex, jit_value_location rm, uint8_t dig
     auto rm_reg = rm.reg;
     assert(rm_reg != jit_register64::no_register)
 
-    auto rm_index = get_int_register_index_long(rex, REX_B, rm_reg);
+    auto rm_index = get_register_index_long(rex, REX_B, rm_reg);
 
     return (digit << 3) | 0b11000000 | rm_index;
 }
 
 void code_builder::push_mod_rm_rip_relative_displacement(jit_value_location to, int32_t displacement) {
     assert(to.reg != jit_register64::no_register)
-    uint8_t reg = get_xmm_register_index(to.reg);
+    uint8_t rex = 0;
+    uint8_t reg = get_register_index_long(rex, 1, to.reg);
+    assert(rex == 0)
     code.push_back(0b00000101 | (reg << 3));
     push_imm32(displacement);
 }
@@ -218,7 +223,7 @@ void code_builder::mov(jit_value_location from, jit_value_location to) {
 void code_builder::mov(int64_t from, jit_value_location to) {
     log(cout << "    mov " << to << ", " << from << endl;)
     auto rex = REX_W;
-    auto reg_index = get_int_register_index_long(rex, REX_B, to.reg);
+    auto reg_index = get_register_index_long(rex, REX_B, to.reg);
 
     code.push_back(rex);
     code.push_back(0xB8 | reg_index);
@@ -246,20 +251,6 @@ void code_builder::movsx(jit_value_location from, jit_value_location to) {
         }
         default_fail
     }
-}
-
-void code_builder::movsd(double from, jit_value_location to) {
-    log(cout << "    movsd " << to << ", " << from << endl;)
-    if (double_const_offset.find(from) == double_const_offset.end()) {
-        double_const_offset[from] = 0;
-    }
-
-    code.push_back(0xF2);
-    code.push_back(0x0F);
-    code.push_back(0x10);
-    push_mod_rm_rip_relative_displacement(to, 0);
-
-    fix_double_list.emplace_back(current_offset() - 4, current_offset(), from);
 }
 
 void code_builder::cmovl(jit_value_location from, jit_value_location to) {
@@ -405,6 +396,44 @@ void code_builder::jcc32(uint8_t opcode, int label_id) {
     fix_list.emplace_back(current_offset() - 4, current_offset(), label_id);
 }
 
+void code_builder::movsd(jit_value_location from, jit_value_location to) {
+    log(cout << "    movsd " << to << ", " << from << endl;)
+    auto rex = REX;
+    auto mod_rm = create_mod_rm(rex, from, to);
+
+    code.push_back(0xF2);
+    if (rex != REX) code.push_back(rex);
+    code.push_back(0x0F);
+    code.push_back(0x10);
+    code.push_back(mod_rm);
+}
+
+void code_builder::movsd(double from, jit_value_location to) {
+    log(cout << "    movsd " << to << ", " << from << endl;)
+    if (double_const_offset.find(from) == double_const_offset.end()) {
+        double_const_offset[from] = 0;
+    }
+
+    code.push_back(0xF2);
+    code.push_back(0x0F);
+    code.push_back(0x10);
+    push_mod_rm_rip_relative_displacement(to, 0);
+
+    fix_double_list.emplace_back(current_offset() - 4, current_offset(), from);
+}
+
+void code_builder::mulsd(jit_value_location from, jit_value_location to) {
+    log(cout << "    mulsd " << to << ", " << from << endl;)
+    auto rex = REX;
+    auto mod_rm = create_mod_rm(rex, from, to);
+
+    code.push_back(0xF2);
+    if (rex != REX) code.push_back(rex);
+    code.push_back(0x0F);
+    code.push_back(0x59);
+    code.push_back(mod_rm);
+}
+
 void code_builder::je(int label_id) {
     log(cout << "    je L" << label_id << endl;)
     jcc32(0x84, label_id);
@@ -461,7 +490,7 @@ void code_builder::link_constants() {
         offset = current_offset();
         uint64_t uint64_blob = *reinterpret_cast<const uint64_t*>(&value);
         push_imm64(uint64_blob);
-        log(cout << "    .quad " << (int64_t) uint64_blob << "    # double " << value << endl;)
+        log(cout << ".quad " << (int64_t) uint64_blob << "    # double " << value << endl;)
     }
 
     for (const auto& [disp_offset, base_offset, value] : fix_double_list) {

@@ -88,7 +88,6 @@ public:
     void mov(jit_value_location from, jit_value_location to);
     void mov(int64_t from, jit_value_location to);
     void movsx(jit_value_location from, jit_value_location to);
-    void movsd(double from, jit_value_location to);
     void cmovl(jit_value_location from, jit_value_location to);
     void cmovg(jit_value_location from, jit_value_location to);
     void add(jit_value_location from, jit_value_location to);
@@ -102,6 +101,9 @@ public:
     void cqo();
     void cmp(jit_value_location first, jit_value_location second);
     void cmp(jit_value_location first, int32_t second);
+    void movsd(jit_value_location from, jit_value_location to);
+    void movsd(double from, jit_value_location to);
+    void mulsd(jit_value_location from, jit_value_location to);
     void je(int label_id);
     void jne(int label_id);
     void jl(int label_id);

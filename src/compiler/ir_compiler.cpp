@@ -35,6 +35,48 @@ void ir_compiler::add_label(ir_label label, int ir_offset) {
     offset_to_label.insert_or_assign(ir_offset, label);
 }
 
+ir_storage_type get_storage_type(const jit_value_location& loc) {
+    switch (loc.reg) {
+        case jit_register64::rax:
+        case jit_register64::rbx:
+        case jit_register64::rcx:
+        case jit_register64::rdx:
+        case jit_register64::rsp:
+        case jit_register64::rbp:
+        case jit_register64::rsi:
+        case jit_register64::rdi:
+        case jit_register64::r8:
+        case jit_register64::r9:
+        case jit_register64::r10:
+        case jit_register64::r11:
+        case jit_register64::r12:
+        case jit_register64::r13:
+        case jit_register64::r14:
+        case jit_register64::r15:
+            return ir_storage_type::ir_int;
+
+        case jit_register64::xmm0:
+        case jit_register64::xmm1:
+        case jit_register64::xmm2:
+        case jit_register64::xmm3:
+        case jit_register64::xmm4:
+        case jit_register64::xmm5:
+        case jit_register64::xmm6:
+        case jit_register64::xmm7:
+        case jit_register64::xmm8:
+        case jit_register64::xmm9:
+        case jit_register64::xmm10:
+        case jit_register64::xmm11:
+        case jit_register64::xmm12:
+        case jit_register64::xmm13:
+        case jit_register64::xmm14:
+        case jit_register64::xmm15:
+            return ir_storage_type::ir_float;
+
+        default_fail
+    }
+}
+
 jit_value_location ir_compiler::get_location(const ir_variable& var) {
     switch (get_storage_type(var.type)) {
         case ir_storage_type::ir_int: {
@@ -199,9 +241,21 @@ bool eliminate_trivial_phi(vector<ir_basic_block>& blocks) {
         for (int i = 0; i < block.ir.size(); i++) {
             if (block.ir[i]->tag != ir_instruction_tag::phi) continue;
             auto instruction = static_pointer_cast<ir_phi_instruction>(block.ir[i]);
-            if (instruction->edges.size() != 1) continue;
-            block.ir[i] = make_shared<ir_assign_instruction>(instruction->edges[0].second, instruction->to);
-            changed = true;
+            if (instruction->edges.size() == 1) {
+                block.ir[i] = make_shared<ir_assign_instruction>(instruction->edges[0].second, instruction->to);
+                changed = true;
+            } else if (instruction->edges.size() > 1) {
+                optional<ir_value> unique;
+                for (const auto& [_, value] : instruction->edges) {
+                    if (value.mode == ir_value_mode::var && instruction->to == value.var) continue;
+                    if (unique.has_value()) goto skip;
+                    unique = value;
+                }
+                assert(unique.has_value())
+                block.ir[i] = make_shared<ir_assign_instruction>(*unique, instruction->to);
+                changed = true;
+                skip:;
+            }
         }
     }
     return changed;
@@ -546,7 +600,19 @@ const uint8_t* ir_compiler::compile_ssa() {
 
 void ir_compiler::compile_assign(const jit_value_location& from, const jit_value_location& to) {
     if (from == to) return;
-    builder.mov(from, to);
+    auto storage = get_storage_type(from);
+    assert(storage == get_storage_type(to));
+    switch (storage) {
+        case ir_storage_type::ir_int: {
+            builder.mov(from, to);
+            break;
+        }
+        case ir_storage_type::ir_float: {
+            builder.movsd(from, to);
+            break;
+        }
+        default_fail
+    }
 }
 
 void ir_compiler::compile_assign(const ir_value& from_value, const jit_value_location& to) {
