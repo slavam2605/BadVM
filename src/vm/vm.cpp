@@ -1,4 +1,5 @@
 #include <iostream>
+#include <iomanip>
 #include "vm.h"
 #include "../utils/constant_pool_utils.h"
 #include "../utils/utils.h"
@@ -25,7 +26,7 @@ void vm::start(const std::string& class_name) {
             continue;
 
         auto method_name = read_utf8_string(main_class, method.name_index);
-        if (method_name == /*TODO "main"*/"foo") {
+        if (method_name == /*TODO "main"*/"dfoo") {
             vector<jvm_value> main_arguments;
 //            main_arguments.push_back(jvm_value::as_reference(0)); TODO bin_op null for main method
             compile_and_invoke(main_class, method, move(main_arguments));
@@ -154,8 +155,9 @@ const code_attribute_info* vm::get_code_info(const class_file* current_class, co
     throw runtime_error("Failed to find Code attribute");
 }
 
-void benchmark(int32_t (*foo)(), int warmup_count = 3, int measure_count = 7) {
-    int32_t result;
+template <class T>
+void benchmark(T (*foo)(), int warmup_count = 3, int measure_count = 7) {
+    T result;
     vector<double> measures;
 
     for (int i = 0; i < warmup_count + measure_count; i++) {
@@ -190,9 +192,10 @@ void vm::compile_and_invoke(const class_file* current_class, const method_info& 
     } else {
         auto code_info = get_code_info(current_class, method);
         auto compiled_fun = compiler.compile(current_class, method, code_info);
-        auto fun_ptr = reinterpret_cast<int32_t (*)()>(const_cast<void*>(compiled_fun));
+        auto fun_ptr = reinterpret_cast<double (*)()>(const_cast<void*>(compiled_fun));
 
-        benchmark(fun_ptr);
+//        benchmark(fun_ptr);
+        cout << setprecision(20) << fun_ptr() << endl;
     }
 }
 

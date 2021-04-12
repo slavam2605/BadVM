@@ -9,8 +9,8 @@ void ir_compiler::assign(ir_value from, ir_variable to) {
     ir.push_back(make_shared<ir_assign_instruction>(from, to));
 }
 
-void ir_compiler::bin_op(ir_value first, ir_value second, ir_variable to, ir_bin_op op) {
-    ir.push_back(make_shared<ir_bin_op_insruction>(first, second, to, op));
+void ir_compiler::bin_op(ir_value first, ir_value second, ir_variable to, ir_bin_op op, ir_cmp_nan_mode nan_mode) {
+    ir.push_back(make_shared<ir_bin_op_insruction>(first, second, to, op, nan_mode));
 }
 
 void ir_compiler::convert(ir_value from, ir_variable to, ir_convert_mode mode) {

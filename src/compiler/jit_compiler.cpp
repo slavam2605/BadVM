@@ -11,6 +11,7 @@ using namespace std;
 
 constexpr auto ir_int = ir_variable_type::ir_int;
 constexpr auto ir_long = ir_variable_type::ir_long;
+constexpr auto ir_double = ir_variable_type::ir_double;
 
 #define read_byte1(name) uint8_t name = code[++offset];
 #define read_byte2(name) uint8_t name##byte1 = code[++offset]; uint8_t name##byte2 = code[++offset]; uint16_t name = (name##byte1 << 8) | name##byte2;
@@ -53,7 +54,7 @@ ir_variable_type to_ir_type(const field_descriptor& descriptor) {
         case base_type_descriptor::reference_d: assert(false)
         case base_type_descriptor::byte_d: assert(false)
         case base_type_descriptor::char_d: assert(false)
-        case base_type_descriptor::double_d: assert(false)
+        case base_type_descriptor::double_d: return ir_double;
         case base_type_descriptor::float_d: assert(false)
         case base_type_descriptor::int_d: return ir_int;
         case base_type_descriptor::long_d: return ir_long;
@@ -108,20 +109,21 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
 
         switch (code[offset]) {
             case op_nop: break;
-            case op_iconst_m1: ir.assign(ir_value(-1), local_state.allocate_stack(ir_int)); break;
-            case op_iconst_0: ir.assign(ir_value(0), local_state.allocate_stack(ir_int)); break;
-            case op_iconst_1: ir.assign(ir_value(1), local_state.allocate_stack(ir_int)); break;
-            case op_iconst_2: ir.assign(ir_value(2), local_state.allocate_stack(ir_int)); break;
-            case op_iconst_3: ir.assign(ir_value(3), local_state.allocate_stack(ir_int)); break;
-            case op_iconst_4: ir.assign(ir_value(4), local_state.allocate_stack(ir_int)); break;
-            case op_iconst_5: ir.assign(ir_value(5), local_state.allocate_stack(ir_int)); break;
+            case op_iconst_m1: ir.assign(ir_value(-1LL), local_state.allocate_stack(ir_int)); break;
+            case op_iconst_0: ir.assign(ir_value(0LL), local_state.allocate_stack(ir_int)); break;
+            case op_iconst_1: ir.assign(ir_value(1LL), local_state.allocate_stack(ir_int)); break;
+            case op_iconst_2: ir.assign(ir_value(2LL), local_state.allocate_stack(ir_int)); break;
+            case op_iconst_3: ir.assign(ir_value(3LL), local_state.allocate_stack(ir_int)); break;
+            case op_iconst_4: ir.assign(ir_value(4LL), local_state.allocate_stack(ir_int)); break;
+            case op_iconst_5: ir.assign(ir_value(5LL), local_state.allocate_stack(ir_int)); break;
             case op_ldc: {
                 read_byte1(index)
                 auto& entry = current_class->constant_pool[index - 1];
                 switch (entry.tag) {
                     case constant_pool_tag::CONSTANT_Integer: {
                         auto value = *reinterpret_cast<jvm_int*>(entry.info);
-                        ir.assign(ir_value(value), local_state.allocate_stack(ir_int));
+                        // TODO add int32 mode
+                        ir.assign(ir_value((int64_t) value), local_state.allocate_stack(ir_int));
                         break;
                     }
                     default:
@@ -138,6 +140,11 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
                         ir.assign(ir_value(value), local_state.allocate_stack(ir_long));
                         break;
                     }
+                    case constant_pool_tag::CONSTANT_Double: {
+                        auto value = *reinterpret_cast<jvm_double*>(entry.info);
+                        ir.assign(ir_value(value), local_state.allocate_stack(ir_double));
+                        break;
+                    }
                     default:
                         throw runtime_error("Unsupported ldc2_w parameter");
                 }
@@ -145,17 +152,24 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
             }
             case op_bipush: {
                 read_byte1(value)
-                ir.assign(ir_value((int8_t) value), local_state.allocate_stack(ir_int));
+                // TODO add int32 mode
+                ir.assign(ir_value((int64_t) (int8_t) value), local_state.allocate_stack(ir_int));
                 break;
             }
             case op_sipush: {
                 read_byte2(value)
-                ir.assign(ir_value((int16_t) value), local_state.allocate_stack(ir_int));
+                // TODO add int32 mode
+                ir.assign(ir_value((int64_t) (int16_t) value), local_state.allocate_stack(ir_int));
                 break;
             }
             case op_iload: {
                 read_byte1(index)
                 ir.assign(local_state.get_local_read(index, ir_int), local_state.allocate_stack(ir_int));
+                break;
+            }
+            case op_dload: {
+                read_byte1(index)
+                ir.assign(local_state.get_local_read(index, ir_double), local_state.allocate_stack(ir_double));
                 break;
             }
             case op_iload_0: ir.assign(local_state.get_local_read(0, ir_int), local_state.allocate_stack(ir_int)); break;
@@ -166,9 +180,18 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
             case op_lload_1: ir.assign(local_state.get_local_read(1, ir_long), local_state.allocate_stack(ir_long)); break;
             case op_lload_2: ir.assign(local_state.get_local_read(2, ir_long), local_state.allocate_stack(ir_long)); break;
             case op_lload_3: ir.assign(local_state.get_local_read(3, ir_long), local_state.allocate_stack(ir_long)); break;
+            case op_dload_0: ir.assign(local_state.get_local_read(0, ir_double), local_state.allocate_stack(ir_double)); break;
+            case op_dload_1: ir.assign(local_state.get_local_read(1, ir_double), local_state.allocate_stack(ir_double)); break;
+            case op_dload_2: ir.assign(local_state.get_local_read(2, ir_double), local_state.allocate_stack(ir_double)); break;
+            case op_dload_3: ir.assign(local_state.get_local_read(3, ir_double), local_state.allocate_stack(ir_double)); break;
             case op_istore: {
                 read_byte1(index)
                 ir.assign(local_state.pop_stack(ir_int), local_state.get_local_write(index, ir_int));
+                break;
+            }
+            case op_dstore: {
+                read_byte1(index)
+                ir.assign(local_state.pop_stack(ir_double), local_state.get_local_write(index, ir_double));
                 break;
             }
             case op_istore_0: ir.assign(local_state.pop_stack(ir_int), local_state.get_local_write(0, ir_int)); break;
@@ -179,6 +202,10 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
             case op_lstore_1: ir.assign(local_state.pop_stack(ir_long), local_state.get_local_write(1, ir_long)); break;
             case op_lstore_2: ir.assign(local_state.pop_stack(ir_long), local_state.get_local_write(2, ir_long)); break;
             case op_lstore_3: ir.assign(local_state.pop_stack(ir_long), local_state.get_local_write(3, ir_long)); break;
+            case op_dstore_0: ir.assign(local_state.pop_stack(ir_double), local_state.get_local_write(0, ir_double)); break;
+            case op_dstore_1: ir.assign(local_state.pop_stack(ir_double), local_state.get_local_write(1, ir_double)); break;
+            case op_dstore_2: ir.assign(local_state.pop_stack(ir_double), local_state.get_local_write(2, ir_double)); break;
+            case op_dstore_3: ir.assign(local_state.pop_stack(ir_double), local_state.get_local_write(3, ir_double)); break;
             case op_iadd:
             case op_isub:
             case op_imul:
@@ -213,6 +240,22 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
                 ir.bin_op(var1, var2, result, op);
                 break;
             }
+            case op_dadd:
+            case op_dsub:
+            case op_dmul: {
+                auto var2 = local_state.pop_stack(ir_double);
+                auto var1 = local_state.pop_stack(ir_double);
+                auto result = local_state.allocate_stack(ir_double);
+                ir_bin_op op;
+                switch (code[offset]) {
+                    case op_dadd: op = ir_bin_op::add; break;
+                    case op_dsub: op = ir_bin_op::sub; break;
+                    case op_dmul: op = ir_bin_op::mul; break;
+                    default_fail
+                }
+                ir.bin_op(var1, var2, result, op);
+                break;
+            }
             case op_i2l: {
                 auto var = local_state.pop_stack(ir_int);
                 auto result = local_state.allocate_stack(ir_long);
@@ -230,7 +273,8 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
                 read_byte1(param)
                 // get_local_write is not needed here, because old and new types are the same
                 auto var = local_state.get_local_read(index, ir_int);
-                ir.bin_op(var, ir_value(param), var, ir_bin_op::add);
+                // TODO add int32 mode
+                ir.bin_op(var, ir_value((int64_t) (int8_t) param), var, ir_bin_op::add);
                 break;
             }
             case op_lcmp: {
@@ -238,6 +282,20 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
                 auto var1 = local_state.pop_stack(ir_long);
                 auto result = local_state.allocate_stack(ir_int);
                 ir.bin_op(var1, var2, result, ir_bin_op::cmp);
+                break;
+            }
+            case op_dcmpl:
+            case op_dcmpg: {
+                auto var2 = local_state.pop_stack(ir_double);
+                auto var1 = local_state.pop_stack(ir_double);
+                auto result = local_state.allocate_stack(ir_int);
+                ir_cmp_nan_mode nan_mode;
+                switch (code[offset]) {
+                    case op_dcmpl: nan_mode = ir_cmp_nan_mode::neg_unit; break;
+                    case op_dcmpg: nan_mode = ir_cmp_nan_mode::unit; break;
+                    default_fail
+                }
+                ir.bin_op(var1, var2, result, ir_bin_op::cmp, nan_mode);
                 break;
             }
             case op_if_icmpeq:
@@ -304,7 +362,7 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
                     case op_ifle: cmp_mode = ir_cmp_mode::le; break;
                     default: assert(false)
                 }
-                ir.cmp_jump(var, ir_value(0), cmp_mode, label_true, label_false);
+                ir.cmp_jump(var, ir_value(0LL), cmp_mode, label_true, label_false);
                 ir.add_label(label_false, ir.ir_offset());
                 offset += 2;
                 break;
@@ -325,7 +383,8 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
                 offset += 2;
                 break;
             }
-            case op_ireturn: {
+            case op_ireturn:
+            case op_dreturn: {
                 assert(!descriptor.return_void)
                 auto return_type = to_ir_type(descriptor.return_descriptor);
                 ir.ret(local_state.pop_stack(return_type));

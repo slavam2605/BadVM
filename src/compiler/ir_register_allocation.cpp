@@ -167,9 +167,10 @@ void ir_compiler::color_variables() {
     }
 
     calculate_color_preferences();
+    // TODO support xmm preferences
     unordered_map<jit_register64, int> reg_to_color;
-    for (int i = 1; i < reg_list.size(); i++) {
-        reg_to_color[reg_list[i]] = i;
+    for (int i = 1; i < int_reg_list.size(); i++) {
+        reg_to_color[int_reg_list[i]] = i;
     }
     unordered_set<ir_variable> all_variables;
     for (const auto& block : blocks) {
@@ -182,8 +183,11 @@ void ir_compiler::color_variables() {
 
     cout << endl << "---- Coloring preference ----" << endl;
     for (const auto& [var, pref_set] : reg_preference) {
+        auto storage = get_storage_type(var.type);
+        if (storage != ir_storage_type::ir_int) assert(false)
         unordered_set<int> used_colors;
         for (const auto& other_var : interference_graph[var]) {
+            if (get_storage_type(other_var.type) != storage) continue;
             used_colors.insert(color[other_var]);
         }
         for (const auto& target_reg : pref_set) {
@@ -195,18 +199,21 @@ void ir_compiler::color_variables() {
             break;
         }
         assert(color[var] != 0)
-        assert(color[var] < reg_list.size())
+        assert(storage != ir_storage_type::ir_int || color[var] < int_reg_list.size())
         assert(used_colors.find(color[var]) == used_colors.end())
     }
 
     for (const auto& var : all_variables) {
         if (color[var] != 0) continue;
+        auto storage = get_storage_type(var.type);
 
         unordered_set<int> used_colors;
         for (const auto& other_var : interference_graph[var]) {
+            if (get_storage_type(other_var.type) != storage) continue;
             used_colors.insert(color[other_var]);
         }
         for (const auto& target_var : color_preference[var]) {
+            assert(get_storage_type(target_var.type) == storage)
             auto preferred_color = color[target_var];
             if (preferred_color == 0) continue;
             if (used_colors.find(preferred_color) != used_colors.end()) continue;
@@ -222,7 +229,8 @@ void ir_compiler::color_variables() {
 
         color_done:
         assert(color[var] != 0)
-        assert(color[var] < reg_list.size())
+        assert(storage != ir_storage_type::ir_int || color[var] < int_reg_list.size())
+        assert(storage != ir_storage_type::ir_float || color[var] < float_reg_list.size())
         assert(used_colors.find(color[var]) == used_colors.end())
     }
 

@@ -10,6 +10,10 @@
 enum class jit_register64 {
     rax, rbx, rcx, rdx, rsp, rbp, rsi, rdi,
     r8, r9, r10, r11, r12, r13, r14, r15,
+
+    xmm0, xmm1, xmm2, xmm3, xmm4, xmm5, xmm6, xmm7,
+    xmm8, xmm9, xmm10, xmm11, xmm12, xmm13, xmm14, xmm15,
+
     no_register
 };
 
@@ -53,24 +57,38 @@ struct fix_jump_entry {
             : label_offset(labelOffset), jump_source_offset(jumpSourceOffset), label_id(labelId) {}
 };
 
+struct fix_double_const_entry {
+    int disp_offset;
+    int base_offset;
+    double value;
+
+    fix_double_const_entry(int disp_offset, int base_offset, double value)
+            : disp_offset(disp_offset), base_offset(base_offset), value(value) {}
+};
+
 class code_builder {
     std::vector<uint8_t> code;
     std::vector<fix_jump_entry> fix_list;
     std::unordered_map<int, int> label_map; // label id -> native offset
+    std::vector<fix_double_const_entry> fix_double_list;
+    std::unordered_map<double, int> double_const_offset;
 
     void push_imm32(uint32_t value);
     void push_imm64(uint64_t value);
     void write_imm32(int offset, uint32_t value);
     void jcc32(uint8_t opcode, int label_id);
+    void push_mod_rm_rip_relative_displacement(jit_value_location to, int32_t displacement);
 public:
     const std::vector<uint8_t>& get_code() const;
     int current_offset() const;
     void mark_label(int label_id);
     void resolve_labels();
+    void link_constants();
 
     void mov(jit_value_location from, jit_value_location to);
     void mov(int64_t from, jit_value_location to);
     void movsx(jit_value_location from, jit_value_location to);
+    void movsd(double from, jit_value_location to);
     void cmovl(jit_value_location from, jit_value_location to);
     void cmovg(jit_value_location from, jit_value_location to);
     void add(jit_value_location from, jit_value_location to);

@@ -18,7 +18,8 @@ namespace std {
 }
 
 ir_compiler::ir_compiler(code_manager& manager)
-        : manager(manager), reg_list{jit_register64::no_register, rax, rcx, rdx, r8, r9/*, r10, r11*/} {}
+        : manager(manager), int_reg_list{no_register, rax, rcx, rdx, r8, r9/*, r10, r11*/},
+          float_reg_list{no_register, xmm0, xmm1, xmm2, xmm3, xmm4, xmm5} {}
 
 ir_basic_block::ir_basic_block(const ir_label& label) : label(label) {}
 
@@ -35,10 +36,22 @@ void ir_compiler::add_label(ir_label label, int ir_offset) {
 }
 
 jit_value_location ir_compiler::get_location(const ir_variable& var) {
-    auto reg = reg_list[color[var]];
-    switch (var.type) {
-        case ir_variable_type::ir_int: return jit_value_location(reg, 32);
-        case ir_variable_type::ir_long: return jit_value_location(reg);
+    switch (get_storage_type(var.type)) {
+        case ir_storage_type::ir_int: {
+            auto reg = int_reg_list[color[var]];
+            switch (var.type) {
+                case ir_variable_type::ir_int: return jit_value_location(reg, 32);
+                case ir_variable_type::ir_long: return jit_value_location(reg);
+                default_fail
+            }
+        }
+        case ir_storage_type::ir_float: {
+            auto reg = float_reg_list[color[var]];
+            switch (var.type) {
+                case ir_variable_type::ir_double: return jit_value_location(reg, 64);
+                default_fail
+            }
+        }
         default_fail
     }
 }
@@ -204,8 +217,8 @@ bool simplify_instructions(vector<ir_basic_block>& blocks) {
             switch (block.ir[i]->tag) {
                 case ir_instruction_tag::bin_op: {
                     auto instruction = static_pointer_cast<ir_bin_op_insruction>(block.ir[i]);
-                    auto first = instruction->first.value;
-                    auto second = instruction->second.value;
+                    auto first = instruction->first.int64_value;
+                    auto second = instruction->second.int64_value;
                     int64_t value;
                     switch (instruction->op) {
                         case ir_bin_op::add: value = first + second; break;
@@ -221,8 +234,8 @@ bool simplify_instructions(vector<ir_basic_block>& blocks) {
                 }
                 case ir_instruction_tag::cmp_jump: {
                     auto instruction = static_pointer_cast<ir_cmp_jump_instruction>(block.ir[i]);
-                    auto first = instruction->first.value;
-                    auto second = instruction->second.value;
+                    auto first = instruction->first.int64_value;
+                    auto second = instruction->second.int64_value;
                     bool value;
                     switch (instruction->mode) {
                         case ir_cmp_mode::eq: value = first == second; break;
@@ -276,6 +289,7 @@ bool combine_compare_jump(vector<ir_basic_block>& blocks) {
             if (item->tag != ir_instruction_tag::bin_op) continue;
             auto instruction = static_pointer_cast<ir_bin_op_insruction>(item);
             if (instruction->op != ir_bin_op::cmp) continue;
+            if (instruction->nan_mode != ir_cmp_nan_mode::no_nan) continue;
             compare_assigns.insert_or_assign(instruction->to, make_pair(instruction->first, instruction->second));
         }
     }
@@ -437,7 +451,7 @@ const uint8_t* ir_compiler::compile_ssa() {
                                 break;
                             }
                             case ir_value_mode::int64: {
-                                auto second_value = second.value;
+                                auto second_value = second.int64_value;
                                 assert_fit_int32(second_value)
                                 builder.cmp(first_loc, second_value);
                                 break;
@@ -482,17 +496,28 @@ const uint8_t* ir_compiler::compile_ssa() {
                     auto instruction = static_pointer_cast<ir_ret_instruction>(item);
                     switch (instruction->value.mode) {
                         case ir_value_mode::var: {
-                            auto from = get_location(instruction->value.var);
-                            if (from != rax) {
-                                builder.mov(from, rax);
+                            auto var = instruction->value.var;
+                            auto from = get_location(var);
+                            jit_value_location return_loc;
+                            switch (get_storage_type(var.type)) {
+                                case ir_storage_type::ir_int: return_loc = jit_value_location(rax, from.bit_size); break;
+                                case ir_storage_type::ir_float: return_loc = jit_value_location(xmm0, from.bit_size); break;
+                                default_fail
+                            }
+                            if (from != return_loc) {
+                                compile_assign(from, return_loc);
                             }
                             break;
                         }
                         case ir_value_mode::int64: {
-                            builder.mov(instruction->value.value, rax);
+                            compile_assign(instruction->value, rax);
                             break;
                         }
-                        default: assert(false)
+                        case ir_value_mode::float64: {
+                            compile_assign(instruction->value, xmm0);
+                            break;
+                        }
+                        default_fail
                     }
                     builder.ret();
                     break;
@@ -506,6 +531,7 @@ const uint8_t* ir_compiler::compile_ssa() {
     }
 
     builder.resolve_labels();
+    builder.link_constants();
 
     auto code_chunk = manager.add_code_chunk(builder.get_code());
 
@@ -531,10 +557,14 @@ void ir_compiler::compile_assign(const ir_value& from_value, const jit_value_loc
             break;
         }
         case ir_value_mode::int64: {
-            builder.mov(from_value.value, to);
+            builder.mov(from_value.int64_value, to);
             break;
         }
-        default: assert(false)
+        case ir_value_mode::float64: {
+            builder.movsd(from_value.float64_value, to);
+            break;
+        }
+        default_fail
     }
 }
 

@@ -99,7 +99,7 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
                     break;
                 }
                 case ir_value_mode::int64: {
-                    auto value = second_value.value;
+                    auto value = second_value.int64_value;
                     if (op == ir_bin_op::rem) {
                         // TODO replace idiv with a bit hack and imul
                         // TODO allocate temp register

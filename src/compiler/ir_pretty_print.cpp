@@ -5,7 +5,13 @@
 using namespace std;
 
 ostream& operator<<(ostream& stream, const ir_variable& var) {
-    return stream << "var" << var.id << "." << var.version;
+    switch (var.type) {
+        case ir_variable_type::ir_int: stream << "ivar"; break;
+        case ir_variable_type::ir_long: stream << "lvar"; break;
+        case ir_variable_type::ir_double: stream << "dvar"; break;
+        default_fail
+    }
+    return stream << var.id << "." << var.version;
 }
 
 ostream& operator<<(ostream& stream, const ir_value& var) {
@@ -14,10 +20,12 @@ ostream& operator<<(ostream& stream, const ir_value& var) {
             stream << var.var;
             break;
         case ir_value_mode::int64:
-            stream << var.value;
+            stream << var.int64_value;
             break;
-        default:
-            assert(false)
+        case ir_value_mode::float64:
+            stream << var.float64_value;
+            break;
+        default_fail
     }
     return stream;
 }

@@ -30,7 +30,8 @@ class ir_compiler {
     std::unordered_map<ir_variable, std::unordered_set<jit_register64>> reg_preference;
     std::unordered_map<ir_variable, int> color;
     std::unordered_map<ir_label, const ir_basic_block*> block_map;
-    std::vector<jit_register64> reg_list;
+    std::vector<jit_register64> int_reg_list;
+    std::vector<jit_register64> float_reg_list;
 
 public:
     ir_compiler(code_manager& manager);
@@ -56,7 +57,7 @@ public:
     const uint8_t* compile();
 
     void assign(ir_value from, ir_variable to);
-    void bin_op(ir_value first, ir_value second, ir_variable to, ir_bin_op op);
+    void bin_op(ir_value first, ir_value second, ir_variable to, ir_bin_op op, ir_cmp_nan_mode nan_mode = ir_cmp_nan_mode::no_nan);
     void convert(ir_value from, ir_variable to, ir_convert_mode mode);
     void cmp_jump(ir_value first, ir_value second, ir_cmp_mode mode, ir_label label_true, ir_label label_false);
     void jump(ir_label label);

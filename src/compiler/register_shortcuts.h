@@ -20,4 +20,23 @@ auto static constexpr r13 = jit_register64::r13;
 auto static constexpr r14 = jit_register64::r14;
 auto static constexpr r15 = jit_register64::r15;
 
+auto static constexpr xmm0 = jit_register64::xmm0;
+auto static constexpr xmm1 = jit_register64::xmm1;
+auto static constexpr xmm2 = jit_register64::xmm2;
+auto static constexpr xmm3 = jit_register64::xmm3;
+auto static constexpr xmm4 = jit_register64::xmm4;
+auto static constexpr xmm5 = jit_register64::xmm5;
+auto static constexpr xmm6 = jit_register64::xmm6;
+auto static constexpr xmm7 = jit_register64::xmm7;
+auto static constexpr xmm8 = jit_register64::xmm8;
+auto static constexpr xmm9 = jit_register64::xmm9;
+auto static constexpr xmm10 = jit_register64::xmm10;
+auto static constexpr xmm11 = jit_register64::xmm11;
+auto static constexpr xmm12 = jit_register64::xmm12;
+auto static constexpr xmm13 = jit_register64::xmm13;
+auto static constexpr xmm14 = jit_register64::xmm14;
+auto static constexpr xmm15 = jit_register64::xmm15;
+
+auto static constexpr no_register = jit_register64::no_register;
+
 #endif //BADJVM_REGISTER_SHORTCUTS_H

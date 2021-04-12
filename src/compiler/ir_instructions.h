@@ -5,10 +5,24 @@
 #include <functional>
 #include <algorithm>
 #include <ostream>
+#include "../utils/utils.h"
 
 enum class ir_variable_type {
-    ir_no_type, ir_int, ir_long
+    ir_no_type, ir_int, ir_long, ir_double
 };
+
+enum class ir_storage_type {
+    ir_int, ir_float
+};
+
+inline ir_storage_type get_storage_type(const ir_variable_type& type) {
+    switch (type) {
+        case ir_variable_type::ir_int: return ir_storage_type::ir_int;
+        case ir_variable_type::ir_long: return ir_storage_type::ir_int;
+        case ir_variable_type::ir_double: return ir_storage_type::ir_float;
+        default_fail
+    }
+}
 
 struct ir_variable {
     int id, version;
@@ -25,16 +39,18 @@ struct ir_variable {
 std::ostream& operator<<(std::ostream& stream, const ir_variable& var);
 
 enum class ir_value_mode {
-    var, int64
+    var, int64, float64
 };
 
 struct ir_value {
     ir_value_mode mode;
     ir_variable var;
-    int64_t value;
+    int64_t int64_value;
+    double float64_value;
 
     ir_value(const ir_variable& var) : mode(ir_value_mode::var), var(var) {}
-    explicit ir_value(int64_t value) : mode(ir_value_mode::int64), value(value) {}
+    explicit ir_value(int64_t value) : mode(ir_value_mode::int64), int64_value(value) {}
+    explicit ir_value(double value) : mode(ir_value_mode::float64), float64_value(value) {}
 };
 
 std::ostream& operator<<(std::ostream& stream, const ir_value& var);
@@ -93,13 +109,18 @@ enum class ir_bin_op {
     add, sub, mul, div, rem, cmp
 };
 
+enum class ir_cmp_nan_mode {
+    no_nan, unit, neg_unit
+};
+
 struct ir_bin_op_insruction : ir_instruction {
     ir_value first, second;
     ir_variable to;
     ir_bin_op op;
+    ir_cmp_nan_mode nan_mode;
 
-    ir_bin_op_insruction(const ir_value& first, const ir_value& second, const ir_variable& to, const ir_bin_op& op)
-            : ir_instruction(ir_instruction_tag::bin_op), first(first), second(second), to(to), op(op) {}
+    ir_bin_op_insruction(const ir_value& first, const ir_value& second, const ir_variable& to, const ir_bin_op& op, const ir_cmp_nan_mode& nan_mode)
+            : ir_instruction(ir_instruction_tag::bin_op), first(first), second(second), to(to), op(op), nan_mode(nan_mode) {}
 
     std::vector<ir_value*> get_in_values() override { return {&first, &second}; }
     std::vector<ir_variable*> get_out_variables() override { return {&to}; }
