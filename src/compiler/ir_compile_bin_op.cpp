@@ -17,7 +17,17 @@ void ir_compiler::compile_double_bin_op(const std::shared_ptr<ir_bin_op_insructi
                 case ir_value_mode::var: {
                     auto second = get_location(second_value.var);
                     switch (op) {
-                        case ir_bin_op::add: assert(false)
+                        case ir_bin_op::add: {
+                            if (first == to) {
+                                builder.addsd(second, to);
+                            } else if (second == to) {
+                                builder.addsd(first, to);
+                            } else {
+                                builder.movsd(first, to);
+                                builder.addsd(second, to);
+                            };
+                            break;
+                        }
                         case ir_bin_op::sub: assert(false)
                         case ir_bin_op::mul: {
                             if (first == to) {

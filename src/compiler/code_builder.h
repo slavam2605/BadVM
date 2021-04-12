@@ -103,6 +103,7 @@ public:
     void cmp(jit_value_location first, int32_t second);
     void movsd(jit_value_location from, jit_value_location to);
     void movsd(double from, jit_value_location to);
+    void addsd(jit_value_location from, jit_value_location to);
     void mulsd(jit_value_location from, jit_value_location to);
     void je(int label_id);
     void jne(int label_id);
