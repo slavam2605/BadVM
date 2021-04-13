@@ -9,6 +9,10 @@ void ir_compiler::compile_double_bin_op(const std::shared_ptr<ir_bin_op_insructi
     auto first_value = instruction->first;
     auto second_value = instruction->second;
     auto to = get_location(instruction->to);
+    if (first_value.mode != ir_value_mode::var && second_value.mode == ir_value_mode::var &&
+        (op == ir_bin_op::add || op == ir_bin_op::mul)) {
+        swap(first_value, second_value);
+    }
 
     switch (first_value.mode) {
         case ir_value_mode::var: {
@@ -63,6 +67,20 @@ void ir_compiler::compile_double_bin_op(const std::shared_ptr<ir_bin_op_insructi
                 case ir_value_mode::float64: {
                     auto second = second_value.float64_value;
                     switch (op) {
+                        case ir_bin_op::add: {
+                            if (first != to) {
+                                builder.movsd(first, to);
+                            }
+                            builder.addsd(second, to);
+                            break;
+                        }
+                        case ir_bin_op::mul: {
+                            if (first != to) {
+                                builder.movsd(first, to);
+                            }
+                            builder.mulsd(second, to);
+                            break;
+                        }
                         case ir_bin_op::cmp: {
                             auto gt_label = create_label();
                             auto lt_label = create_label();

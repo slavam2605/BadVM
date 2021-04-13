@@ -103,8 +103,10 @@ public:
     void movsd(jit_value_location from, jit_value_location to);
     void movsd(double from, jit_value_location to);
     void addsd(jit_value_location from, jit_value_location to);
+    void addsd(double from, jit_value_location to);
     void subsd(jit_value_location from, jit_value_location to);
     void mulsd(jit_value_location from, jit_value_location to);
+    void mulsd(double from, jit_value_location to);
     void comisd(jit_value_location first, double second);
     void je(int label_id);
     void jne(int label_id);

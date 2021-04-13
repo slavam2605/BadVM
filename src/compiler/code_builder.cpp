@@ -447,6 +447,24 @@ void code_builder::addsd(jit_value_location from, jit_value_location to) {
     code.push_back(mod_rm);
 }
 
+void code_builder::addsd(double from, jit_value_location to) {
+    log(cout << "    addsd " << to << ", " << from << endl;)
+    if (double_const_offset.find(from) == double_const_offset.end()) {
+        double_const_offset[from] = 0;
+    }
+    auto rex = REX;
+    auto mod_rm = create_mod_rm_rip_relative_displacement(rex, to);
+
+    code.push_back(0xF2);
+    if (rex != REX) code.push_back(rex);
+    code.push_back(0x0F);
+    code.push_back(0x58);
+    code.push_back(mod_rm);
+    push_imm32(0);
+
+    fix_double_list.emplace_back(current_offset() - 4, current_offset(), from);
+}
+
 void code_builder::mulsd(jit_value_location from, jit_value_location to) {
     log(cout << "    mulsd " << to << ", " << from << endl;)
     auto rex = REX;
@@ -457,6 +475,24 @@ void code_builder::mulsd(jit_value_location from, jit_value_location to) {
     code.push_back(0x0F);
     code.push_back(0x59);
     code.push_back(mod_rm);
+}
+
+void code_builder::mulsd(double from, jit_value_location to) {
+    log(cout << "    mulsd " << to << ", " << from << endl;)
+    if (double_const_offset.find(from) == double_const_offset.end()) {
+        double_const_offset[from] = 0;
+    }
+    auto rex = REX;
+    auto mod_rm = create_mod_rm_rip_relative_displacement(rex, to);
+
+    code.push_back(0xF2);
+    if (rex != REX) code.push_back(rex);
+    code.push_back(0x0F);
+    code.push_back(0x59);
+    code.push_back(mod_rm);
+    push_imm32(0);
+
+    fix_double_list.emplace_back(current_offset() - 4, current_offset(), from);
 }
 
 void code_builder::comisd(jit_value_location first, double second) {
