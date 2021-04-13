@@ -21,6 +21,7 @@ class ir_compiler {
     code_manager& manager;
     code_builder builder;
     std::vector<std::shared_ptr<ir_instruction>> ir;
+    std::unordered_map<int, int> last_var_version;
     std::unordered_map<int, ir_label> offset_to_label;
     int last_label_id = 0;
     std::vector<ir_basic_block> blocks;
@@ -43,16 +44,18 @@ public:
     void compile_assign(const ir_value& from_value, const jit_value_location& to);
     void compile_assign(const jit_value_location& from, const jit_value_location& to);
     void compile_phi_dfs(const jit_value_location& start, int version,
-                         const std::unordered_map<jit_value_location, std::unordered_set<jit_value_location>>& assign_from_map,
+                         const std::unordered_map<jit_value_location, std::vector<jit_value_location>>& assign_from_map,
                          std::unordered_map<jit_value_location, int>& visited_version,
                          std::unordered_map<jit_value_location, jit_value_location>& temp);
     void compile_phi_before_jump(const ir_label& current_label, const ir_basic_block* target_block);
     void compile_double_bin_op(const std::shared_ptr<ir_bin_op_insruction>& instruction);
     void compile_bin_op(const std::shared_ptr<ir_bin_op_insruction>& instruction);
     jit_value_location get_location(const ir_variable& var);
+    bool has_actual_phi_assigns(const ir_basic_block& block, const ir_label& from);
     const uint8_t* compile_ssa();
     void calculate_color_preferences();
     void color_variables();
+    bool inverse_loops();
     void optimize();
     void convert_to_ssa();
     const uint8_t* compile();

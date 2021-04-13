@@ -194,7 +194,7 @@ void vm::compile_and_invoke(const class_file* current_class, const method_info& 
         auto compiled_fun = compiler.compile(current_class, method, code_info);
         auto fun_ptr = reinterpret_cast<int32_t (*)()>(const_cast<void*>(compiled_fun));
 
-//        benchmark(fun_ptr);
-        cout << setprecision(20) << fun_ptr() << endl;
+        benchmark(fun_ptr);
+//        cout << setprecision(20) << fun_ptr() << endl;
     }
 }
