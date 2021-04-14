@@ -154,14 +154,15 @@ struct ir_cmp_jump_instruction : ir_instruction {
     ir_value first, second;
     ir_cmp_mode mode;
     ir_label label_true, label_false;
+    ir_cmp_nan_mode nan_mode;
 
     ir_cmp_jump_instruction(const ir_value& first, const ir_value& second, ir_cmp_mode mode,
-                            const ir_label& label_true, const ir_label& label_false)
+                            const ir_label& label_true, const ir_label& label_false, const ir_cmp_nan_mode& nan_mode)
             : ir_instruction(ir_instruction_tag::cmp_jump), first(first), second(second),
-              mode(mode), label_true(label_true), label_false(label_false) {}
+              mode(mode), label_true(label_true), label_false(label_false), nan_mode(nan_mode) {}
 
     std::shared_ptr<ir_instruction> clone() const override {
-        return std::make_shared<ir_cmp_jump_instruction>(first, second, mode, label_true, label_false);
+        return std::make_shared<ir_cmp_jump_instruction>(first, second, mode, label_true, label_false, nan_mode);
     }
     std::vector<ir_label> get_jump_labels() const override { return {label_true, label_false}; }
     std::vector<ir_value*> get_in_values() override { return {&first, &second}; }

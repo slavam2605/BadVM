@@ -336,14 +336,13 @@ bool remove_unused_blocks(vector<ir_basic_block>& blocks) {
 
 bool combine_compare_jump(vector<ir_basic_block>& blocks) {
     bool changed = false;
-    unordered_map<ir_variable, pair<ir_value, ir_value>> compare_assigns;
+    unordered_map<ir_variable, tuple<ir_value, ir_value, ir_cmp_nan_mode>> compare_assigns;
     for (const auto& block : blocks) {
         for (const auto& item : block.ir) {
             if (item->tag != ir_instruction_tag::bin_op) continue;
             auto instruction = static_pointer_cast<ir_bin_op_insruction>(item);
             if (instruction->op != ir_bin_op::cmp) continue;
-            if (instruction->nan_mode != ir_cmp_nan_mode::no_nan) continue;
-            compare_assigns.insert_or_assign(instruction->to, make_pair(instruction->first, instruction->second));
+            compare_assigns.insert_or_assign(instruction->to, make_tuple(instruction->first, instruction->second, instruction->nan_mode));
         }
     }
 
@@ -355,9 +354,9 @@ bool combine_compare_jump(vector<ir_basic_block>& blocks) {
             if (instruction->first.mode != ir_value_mode::var) continue;
             auto iter = compare_assigns.find(instruction->first.var);
             if (iter == compare_assigns.end()) continue;
-            auto [new_first, new_second] = iter->second;
+            auto [new_first, new_second, nan_mode] = iter->second;
             block.ir[i] = make_shared<ir_cmp_jump_instruction>(new_first, new_second, instruction->mode,
-                                                               instruction->label_true, instruction->label_false);
+                                                               instruction->label_true, instruction->label_false, nan_mode);
             changed = true;
         }
     }
@@ -697,19 +696,32 @@ const uint8_t* ir_compiler::compile_ssa() {
                     auto instruction = static_pointer_cast<ir_cmp_jump_instruction>(item);
                     auto first = instruction->first;
                     auto second = instruction->second;
+                    ir_variable_type compare_type;
                     // TODO implement cmp with imm
                     if (first.mode == ir_value_mode::var) {
+                        compare_type = first.var.type;
                         auto first_loc = get_location(first.var);
                         switch (second.mode) {
                             case ir_value_mode::var: {
                                 auto second_loc = get_location(second.var);
-                                builder.cmp(first_loc, second_loc);
+                                switch (first.var.type) {
+                                    case ir_variable_type::ir_int: // TODO correct support for int32 cmp
+                                    case ir_variable_type::ir_long:
+                                        builder.cmp(first_loc, second_loc);
+                                        break;
+                                    default_fail
+                                }
                                 break;
                             }
                             case ir_value_mode::int64: {
                                 auto second_value = second.int64_value;
                                 assert_fit_int32(second_value)
                                 builder.cmp(first_loc, second_value);
+                                break;
+                            }
+                            case ir_value_mode::float64: {
+                                auto second_value = second.float64_value;
+                                builder.comisd(first_loc, second_value);
                                 break;
                             }
                             default_fail
@@ -719,13 +731,29 @@ const uint8_t* ir_compiler::compile_ssa() {
                     }
                     bool true_has_phi = has_actual_phi_assigns(*block_map[instruction->label_true], block.label);
                     ir_label true_label = true_has_phi ? create_label() : instruction->label_true;
-                    switch (instruction->mode) {
-                        case ir_cmp_mode::eq: builder.je(true_label.id); break;
-                        case ir_cmp_mode::neq: builder.jne(true_label.id); break;
-                        case ir_cmp_mode::lt: builder.jl(true_label.id); break;
-                        case ir_cmp_mode::le: builder.jle(true_label.id); break;
-                        case ir_cmp_mode::gt: builder.jg(true_label.id); break;
-                        case ir_cmp_mode::ge: builder.jge(true_label.id); break;
+                    switch (compare_type) {
+                        case ir_variable_type::ir_int:
+                        case ir_variable_type::ir_long: {
+                            switch (instruction->mode) {
+                                case ir_cmp_mode::eq: builder.je(true_label.id); break;
+                                case ir_cmp_mode::neq: builder.jne(true_label.id); break;
+                                case ir_cmp_mode::lt: builder.jl(true_label.id); break;
+                                case ir_cmp_mode::le: builder.jle(true_label.id); break;
+                                case ir_cmp_mode::gt: builder.jg(true_label.id); break;
+                                case ir_cmp_mode::ge: builder.jge(true_label.id); break;
+                                default_fail
+                            }
+                            break;
+                        }
+                        case ir_variable_type::ir_double: {
+                            switch (instruction->mode) {
+                                case ir_cmp_mode::lt: builder.jb(true_label.id); break;
+                                case ir_cmp_mode::gt: builder.ja(true_label.id); break;
+                                default_fail
+                            }
+                            break;
+                        }
+                        default_fail
                     }
                     compile_phi_before_jump(block.label, block_map[instruction->label_false]);
                     if (true_has_phi || i >= blocks.size() - 1 || blocks[i + 1].label != instruction->label_false) {

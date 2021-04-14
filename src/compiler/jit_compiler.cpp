@@ -328,7 +328,7 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
                     case op_if_icmple: cmp_mode = ir_cmp_mode::le; break;
                     default: assert(false)
                 }
-                ir.cmp_jump(var1, var2, cmp_mode, label_true, label_false);
+                ir.cmp_jump(var1, var2, cmp_mode, label_true, label_false, ir_cmp_nan_mode::no_nan);
                 ir.add_label(label_false, ir.ir_offset());
                 offset += 2;
                 break;
@@ -362,7 +362,7 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
                     case op_ifle: cmp_mode = ir_cmp_mode::le; break;
                     default: assert(false)
                 }
-                ir.cmp_jump(var, ir_value(0LL), cmp_mode, label_true, label_false);
+                ir.cmp_jump(var, ir_value(0LL), cmp_mode, label_true, label_false, ir_cmp_nan_mode::no_nan);
                 ir.add_label(label_false, ir.ir_offset());
                 offset += 2;
                 break;
