@@ -78,6 +78,10 @@ void ir_compiler::compile_double_bin_op(const std::shared_ptr<ir_bin_op_insructi
                             if (first != to) {
                                 builder.movsd(first, to);
                             }
+                            if (second == 2.0) {
+                                builder.addsd(first, to);
+                                break;
+                            }
                             builder.mulsd(second, to);
                             break;
                         }
