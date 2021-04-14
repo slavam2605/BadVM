@@ -184,20 +184,20 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
                         }
                         case ir_bin_op::rem: {
                             // TODO allocate temp registers
-                            if (to != rdx || second == rdx) {
+                            if (to.reg != rdx || second.reg == rdx) {
                                 builder.mov(rdx, r11);
                             }
-                            if (to != rax || second == rax) {
+                            if (to.reg != rax || second.reg == rax) {
                                 builder.mov(rax, r10);
                             }
                             compile_assign(first, rax);
                             builder.cqo();
                             builder.idiv(second == rax ? r10 : (second == rdx ? r11 : second));
                             compile_assign(rdx, to);
-                            if (to != rax) {
+                            if (to.reg != rax) {
                                 builder.mov(r10, rax);
                             }
-                            if (to != rdx) {
+                            if (to.reg != rdx) {
                                 builder.mov(r11, rdx);
                             }
                             break;
@@ -222,11 +222,11 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
                         // TODO replace idiv with a bit hack and imul
                         // TODO allocate temp register
                         jit_register64 temp = r11;
-                        if (to != rdx) {
+                        if (to.reg != rdx) {
                             builder.mov(rdx, r11);
                             temp = r10;
                         }
-                        if (to != rax) {
+                        if (to.reg != rax) {
                             builder.mov(rax, r10);
                             assert(temp != r10) // TODO can't allocate one more temp register
                         }
@@ -235,10 +235,10 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
                         builder.mov(value, temp);
                         builder.idiv(temp);
                         compile_assign(rdx, to);
-                        if (to != rax) {
+                        if (to.reg != rax) {
                             builder.mov(r10, rax);
                         }
-                        if (to != rdx) {
+                        if (to.reg != rdx) {
                             builder.mov(r11, rdx);
                         }
                         break;
