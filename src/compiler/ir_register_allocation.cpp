@@ -167,11 +167,44 @@ void ir_compiler::color_variables() {
     }
 
     calculate_color_preferences();
-    // TODO support xmm preferences
-    unordered_map<jit_register64, int> reg_to_color;
+    unordered_map<jit_register64, int> int_reg_to_color;
+    unordered_map<jit_register64, int> float_reg_to_color;
     for (int i = 1; i < int_reg_list.size(); i++) {
-        reg_to_color[int_reg_list[i]] = i;
+        int_reg_to_color[int_reg_list[i]] = i;
     }
+    for (int i = 1; i < float_reg_list.size(); i++) {
+        float_reg_to_color[float_reg_list[i]] = i;
+    }
+
+    cout << endl << "---- Coloring preference ----" << endl;
+
+    // Assign locations for function arguments
+    vector<jit_register64> int_arg_regs {rcx, rdx, r8, r9};
+    vector<jit_register64> float_arg_regs {xmm0, xmm1, xmm2, xmm3};
+    for (const auto& block : blocks) {
+        if (block.label.id != 0) continue;
+        for (const auto& item : block.ir) {
+            if (item->tag != ir_instruction_tag::load_argument) continue;
+            auto instruction = static_pointer_cast<ir_load_argument_instruction>(item);
+            auto storage = get_storage_type(instruction->to.type);
+            switch (storage) {
+                case ir_storage_type::ir_int: {
+                    auto argument_reg = int_arg_regs[instruction->argument_index];
+                    cout << "Set register for the argument " << instruction->argument_index << ": " << instruction->to << " => " << argument_reg << endl;
+                    color[instruction->to] = int_reg_to_color[argument_reg];
+                    break;
+                }
+                case ir_storage_type::ir_float: {
+                    auto argument_reg = float_arg_regs[instruction->argument_index];
+                    cout << "Set register for the argument " << instruction->argument_index << ": " << instruction->to << " => " << argument_reg << endl;
+                    color[instruction->to] = float_reg_to_color[argument_reg];
+                    break;
+                }
+                default_fail
+            }
+        }
+    }
+
     unordered_set<ir_variable> all_variables;
     for (const auto& block : blocks) {
         for (const auto& item : block.ir) {
@@ -181,7 +214,6 @@ void ir_compiler::color_variables() {
         }
     }
 
-    cout << endl << "---- Coloring preference ----" << endl;
     for (const auto& [var, pref_set] : reg_preference) {
         auto storage = get_storage_type(var.type);
         if (storage != ir_storage_type::ir_int) assert(false)
@@ -191,7 +223,7 @@ void ir_compiler::color_variables() {
             used_colors.insert(color[other_var]);
         }
         for (const auto& target_reg : pref_set) {
-            auto preferred_color = reg_to_color[target_reg];
+            auto preferred_color = int_reg_to_color[target_reg];
             if (preferred_color == 0) continue;
             if (used_colors.find(preferred_color) != used_colors.end()) continue;
             cout << "Picked preferred register: " << var << " => " << target_reg << endl;

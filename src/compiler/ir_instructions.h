@@ -83,7 +83,7 @@ namespace std {
 }
 
 enum class ir_instruction_tag {
-    assign, bin_op, cmp_jump, convert, jump, ret, phi
+    load_argument, assign, bin_op, cmp_jump, convert, jump, ret, phi
 };
 
 struct ir_instruction {
@@ -98,14 +98,22 @@ struct ir_instruction {
     virtual bool is_pure() const { return true; }
 };
 
+struct ir_load_argument_instruction : ir_instruction {
+    int argument_index;
+    ir_variable to;
+
+    ir_load_argument_instruction(int argument_index, const ir_variable& to)
+            : ir_instruction(ir_instruction_tag::load_argument), argument_index(argument_index), to(to) {}
+    std::shared_ptr<ir_instruction> clone() const override { return std::make_shared<ir_load_argument_instruction>(argument_index, to); }
+    std::vector<ir_variable*> get_out_variables() override { return {&to}; }
+};
+
 struct ir_assign_instruction : ir_instruction {
     ir_value from;
     ir_variable to;
 
-    std::shared_ptr<ir_instruction> clone() const override {
-        return std::make_shared<ir_assign_instruction>(from, to);
-    }
     ir_assign_instruction(const ir_value& from, const ir_variable& to) : ir_instruction(ir_instruction_tag::assign), from(from), to(to) {}
+    std::shared_ptr<ir_instruction> clone() const override { return std::make_shared<ir_assign_instruction>(from, to); }
     std::vector<ir_value*> get_in_values() override { if (from.mode == ir_value_mode::var) return {&from}; else return {}; }
     std::vector<ir_variable*> get_out_variables() override { return {&to}; }
 };

@@ -60,6 +60,7 @@ public:
     void convert_to_ssa();
     const uint8_t* compile();
 
+    void load_argument(int argument_index, ir_variable to);
     void assign(ir_value from, ir_variable to);
     void bin_op(ir_value first, ir_value second, ir_variable to, ir_bin_op op, ir_cmp_nan_mode nan_mode = ir_cmp_nan_mode::no_nan);
     void convert(ir_value from, ir_variable to, ir_convert_mode mode);

@@ -33,6 +33,11 @@ ostream& operator<<(ostream& stream, const ir_value& var) {
 ostream& operator<<(ostream& stream, const shared_ptr<ir_instruction>& item) {
     stream << "    ";
     switch (item->tag) {
+        case ir_instruction_tag::load_argument: {
+            auto instruction = static_pointer_cast<ir_load_argument_instruction>(item);
+            stream << instruction->to << " = " << "argument(" << instruction->argument_index << ")" << endl;
+            break;
+        }
         case ir_instruction_tag::assign: {
             auto instruction = static_pointer_cast<ir_assign_instruction>(item);
             stream << instruction->to << " = " << instruction->from << endl;
@@ -103,8 +108,7 @@ ostream& operator<<(ostream& stream, const shared_ptr<ir_instruction>& item) {
             stream << ")" << endl;
             break;
         }
-        default:
-            assert(false)
+        default_fail
     }
     return stream;
 }

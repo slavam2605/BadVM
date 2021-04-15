@@ -4,6 +4,10 @@
 
 using namespace std;
 
+void ir_compiler::load_argument(int argument_index, ir_variable to) {
+    ir.push_back(make_shared<ir_load_argument_instruction>(argument_index, to));
+}
+
 void ir_compiler::assign(ir_value from, ir_variable to) {
     assert(from.mode != ir_value_mode::var || from.var.type == to.type)
     ir.push_back(make_shared<ir_assign_instruction>(from, to));

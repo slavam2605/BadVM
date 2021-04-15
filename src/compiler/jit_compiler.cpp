@@ -70,30 +70,23 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
 
     jit_local_state local_state(code_info->max_locals, code_info->max_stack);
 
-//    vector<jit_register64> arguments_regs {rcx, rdx, r8, r9};
-//    auto local_offset = 0;
-//    auto arg_reg_it = arguments_regs.begin();
-//    for (const auto& parameter: descriptor.parameters) {
-//        const auto& base_type = parameter.get_base_type();
-//        int param_size = 1;
-//        if (base_type == base_type_descriptor::long_d || base_type == base_type_descriptor::double_d) {
-//            param_size = 2;
-//        }
-//
-//        if (arg_reg_it != arguments_regs.end()) {
-//            // TODO support float arguments
-//            auto next_reg = *arg_reg_it;
-//            locals[local_offset] = next_reg;
-//            used_regs.insert(next_reg);
-//            free_volatile_regs.erase(next_reg);
-//            ++arg_reg_it;
-//        } else {
-//            assert(false)
-//        }
-//        local_offset += param_size;
-//    }
-
     ir_compiler ir(manager);
+
+    auto local_offset = 0;
+    for (int index = 0; index < descriptor.parameters.size(); index++) {
+        const auto& parameter = descriptor.parameters[index];
+        const auto& base_type = parameter.get_base_type();
+        int param_size = 1;
+        ir_variable_type type;
+        switch (base_type) {
+            case base_type_descriptor::int_d: type = ir_int; break;
+            case base_type_descriptor::long_d: type = ir_long; param_size = 2; break;
+            case base_type_descriptor::double_d: type = ir_double; param_size = 2; break;
+            default_fail
+        }
+        ir.load_argument(index, local_state.get_local_write(local_offset, type));
+        local_offset += param_size;
+    }
 
     unordered_map<int, int> bytecode_offset_to_ir;
     unordered_map<int, ir_label> pending_labels;

@@ -304,6 +304,7 @@ bool simplify_instructions(vector<ir_basic_block>& blocks) {
                     changed = true;
                     break;
                 }
+                case ir_instruction_tag::load_argument:
                 case ir_instruction_tag::assign:
                 case ir_instruction_tag::jump:
                 case ir_instruction_tag::ret:
@@ -657,6 +658,10 @@ const uint8_t* ir_compiler::compile_ssa() {
         for (int j = 0; j < block.ir.size(); j++) {
             const auto& item = block.ir[j];
             switch (item->tag) {
+                case ir_instruction_tag::load_argument: {
+                    // Value is already loaded into the target register, no code is needed
+                    break;
+                }
                 case ir_instruction_tag::assign: {
                     auto instruction = static_pointer_cast<ir_assign_instruction>(item);
                     auto to = get_location(instruction->to);
@@ -809,7 +814,7 @@ const uint8_t* ir_compiler::compile_ssa() {
                 case ir_instruction_tag::phi: {
                     break;
                 }
-                default: assert(false)
+                default_fail
             }
         }
     }
