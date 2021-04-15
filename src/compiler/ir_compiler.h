@@ -48,6 +48,8 @@ public:
                          std::unordered_map<jit_value_location, int>& visited_version,
                          std::unordered_map<jit_value_location, jit_value_location>& temp);
     void compile_phi_before_jump(const ir_label& current_label, const ir_basic_block* target_block);
+    void compile_int32_power2_div(jit_value_location first, int32_t second, jit_value_location to);
+    void compile_int32_div(jit_value_location first, int32_t second, jit_value_location to);
     void compile_double_bin_op(const std::shared_ptr<ir_bin_op_insruction>& instruction);
     void compile_bin_op(const std::shared_ptr<ir_bin_op_insruction>& instruction);
     jit_value_location get_location(const ir_variable& var);

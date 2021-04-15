@@ -190,6 +190,7 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
                             if (to.reg != rax || second.reg == rax) {
                                 builder.mov(rax, r10);
                             }
+                            // TODO movsx for int32
                             compile_assign(first, rax);
                             builder.cqo();
                             builder.idiv(second == rax ? r10 : (second == rdx ? r11 : second));
@@ -218,6 +219,13 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
                 }
                 case ir_value_mode::int64: {
                     auto value = second_value.int64_value;
+
+                    // TODO implement ir_value_mode::int32
+                    if (op == ir_bin_op::div && first_value.var.type == ir_variable_type::ir_int) {
+                        compile_int32_div(first, static_cast<int32_t>(value), to);
+                        break;
+                    }
+
                     if (op == ir_bin_op::rem) {
                         // TODO replace idiv with a bit hack and imul
                         // TODO allocate temp register
@@ -230,6 +238,7 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
                             builder.mov(rax, r10);
                             assert(temp != r10) // TODO can't allocate one more temp register
                         }
+                        // TODO movsx for int32
                         compile_assign(first, rax);
                         builder.cqo();
                         builder.mov(value, temp);
@@ -256,6 +265,7 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
                         switch (op) {
                             case ir_bin_op::add: builder.add(value, to); break;
                             case ir_bin_op::sub: builder.sub(value, to); break;
+                            case ir_bin_op::div:
                             case ir_bin_op::rem:
                             case ir_bin_op::mul: assert(false) // handled above
                             default_fail

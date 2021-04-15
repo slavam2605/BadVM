@@ -77,6 +77,7 @@ static constexpr uint8_t op_lmul = 0x69;
 static constexpr uint8_t op_fmul = 0x6a;
 static constexpr uint8_t op_dmul = 0x6b;
 static constexpr uint8_t op_idiv = 0x6c;
+static constexpr uint8_t op_ldiv = 0x6d;
 static constexpr uint8_t op_ddiv = 0x6f;
 static constexpr uint8_t op_irem = 0x70;
 static constexpr uint8_t op_lrem = 0x71;

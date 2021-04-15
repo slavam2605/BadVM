@@ -220,6 +220,7 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
                 break;
             }
             case op_lmul:
+            case op_ldiv:
             case op_lrem: {
                 auto var2 = local_state.pop_stack(ir_long);
                 auto var1 = local_state.pop_stack(ir_long);
@@ -227,6 +228,7 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
                 ir_bin_op op;
                 switch (code[offset]) {
                     case op_lmul: op = ir_bin_op::mul; break;
+                    case op_ldiv: op = ir_bin_op::div; break;
                     case op_lrem: op = ir_bin_op::rem; break;
                     default_fail
                 }

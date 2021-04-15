@@ -6,6 +6,8 @@
 #include <unordered_map>
 #include <cstdint>
 #include <ostream>
+#include <variant>
+#include <optional>
 
 enum class jit_register64 {
     rax, rbx, rcx, rdx, rsp, rbp, rsi, rdi,
@@ -73,10 +75,18 @@ class code_builder {
     std::vector<fix_double_const_entry> fix_double_list;
     std::unordered_map<double, int> double_const_offset;
 
+    void push_imm8(uint8_t value);
     void push_imm32(uint32_t value);
     void push_imm64(uint64_t value);
     void write_imm32(int offset, uint32_t value);
     void jcc32(uint8_t opcode, int label_id);
+    void internal_push_instruction(jit_value_location rm, std::variant<jit_value_location, uint8_t> r,
+                                   std::optional<std::pair<uint64_t, uint8_t>> imm, std::vector<uint8_t> opcodes);
+    void rexw_rm_r_instr(jit_value_location rm, jit_value_location r, uint8_t opcode);
+    void rexw_rm_r_instr(jit_value_location rm, jit_value_location r, uint8_t opcode1, uint8_t opcode2);
+    void rexw_rm_rdigit_imm32_instr(jit_value_location rm, uint8_t reg_digit, uint8_t opcode, uint32_t imm);
+    void rexw_rm_rdigit_imm8_instr(jit_value_location rm, uint8_t reg_digit, uint8_t opcode, uint8_t imm);
+    void rexw_rm_rdigit_instr(jit_value_location rm, uint8_t reg_digit, uint8_t opcode);
 public:
     const std::vector<uint8_t>& get_code() const;
     int current_offset() const;
@@ -89,6 +99,7 @@ public:
     void movsx(jit_value_location from, jit_value_location to);
     void cmovl(jit_value_location from, jit_value_location to);
     void cmovg(jit_value_location from, jit_value_location to);
+    void cmovns(jit_value_location from, jit_value_location to);
     void add(jit_value_location from, jit_value_location to);
     void add(int32_t from, jit_value_location to);
     void sub(jit_value_location from, jit_value_location to);
@@ -97,9 +108,11 @@ public:
     void imul(jit_value_location first, int32_t second, jit_value_location to);
     void idiv(jit_value_location value);
     void neg(jit_value_location value);
+    void sar(jit_value_location first, int8_t second);
     void cqo();
     void cmp(jit_value_location first, jit_value_location second);
     void cmp(jit_value_location first, int32_t second);
+    void test(jit_value_location first, jit_value_location second);
     void movsd(jit_value_location from, jit_value_location to);
     void movsd(double from, jit_value_location to);
     void addsd(jit_value_location from, jit_value_location to);
