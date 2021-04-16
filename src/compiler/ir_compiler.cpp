@@ -126,8 +126,22 @@ jit_value_location ir_compiler::get_location(const ir_variable& var) {
     }
 }
 
+void ir_compiler::build_control_flow_graph() {
+    assert(block_map.empty())
+    assert(control_flow_in.empty())
+    assert(control_flow_out.empty())
+    for (auto& block : blocks) {
+        block_map[block.label] = &block;
+        const auto& [last_instruction, _] = block.ir().back();
+        for (const auto& target_label : last_instruction->get_jump_labels()) {
+            control_flow_in[target_label].push_back(block.label);
+            control_flow_out[block.label].push_back(target_label);
+        }
+    }
+}
+
 void ir_compiler::convert_to_ssa() {
-    unordered_map<ir_label, vector<ir_label>> control_flow_in;
+    unordered_map<ir_label, vector<ir_label>> control_flow;
     ir_label root(0);
     blocks.push_back(ir_basic_block(root));
 
@@ -167,7 +181,7 @@ void ir_compiler::convert_to_ssa() {
             }
             assert(!jump_labels.empty() || item->exit_function())
             for (const auto& target_label : jump_labels) {
-                control_flow_in[target_label].push_back(block.label);
+                control_flow[target_label].push_back(block.label);
             }
         }
     }
@@ -175,7 +189,7 @@ void ir_compiler::convert_to_ssa() {
     for (auto& block : blocks) {
         for (const auto& [var_id, type] : all_var_ids) {
             vector<pair<ir_label, ir_value>> edges;
-            for (const auto& from_label : control_flow_in[block.label]) {
+            for (const auto& from_label : control_flow[block.label]) {
                 edges.emplace_back(from_label, ir_variable(var_id, 0, type));
             }
             block.emplace<ir_phi_instruction>(0, edges, ir_variable(var_id, 0, type));
@@ -905,6 +919,7 @@ void ir_compiler::compile_assign(const ir_value& from_value, const jit_value_loc
 const uint8_t* ir_compiler::compile() {
     convert_to_ssa();
     optimize();
+    build_control_flow_graph();
     color_variables();
     return compile_ssa();
 }

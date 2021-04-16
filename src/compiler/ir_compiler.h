@@ -12,12 +12,13 @@
 #include <algorithm>
 
 struct ir_data_flow_holder {
-
+    std::unordered_set<ir_variable> live_vars;
 };
 
 struct ir_basic_block {
     ir_label label;
     bool data_flow_valid;
+    ir_data_flow_holder out_data_flow;
     std::vector<std::pair<std::shared_ptr<ir_instruction>, ir_data_flow_holder>> _ir;
 
     ir_basic_block(const ir_label& label);
@@ -64,13 +65,15 @@ class ir_compiler {
     std::unordered_map<int, int> last_var_version;
     std::unordered_map<int, ir_label> offset_to_label;
     int last_label_id = 0;
+    std::unordered_map<ir_label, std::vector<ir_label>> control_flow_in;
+    std::unordered_map<ir_label, std::vector<ir_label>> control_flow_out;
     std::vector<ir_basic_block> blocks;
 
     // Valid after coloring
     std::unordered_map<ir_variable, std::vector<ir_variable>> color_preference;
     std::unordered_map<ir_variable, std::unordered_set<jit_register64>> reg_preference;
     std::unordered_map<ir_variable, int> color;
-    std::unordered_map<ir_label, const ir_basic_block*> block_map;
+    std::unordered_map<ir_label, ir_basic_block*> block_map;
     std::vector<jit_register64> int_reg_list;
     std::vector<jit_register64> float_reg_list;
 
@@ -99,6 +102,7 @@ public:
     void color_variables();
     bool inverse_loops();
     void optimize();
+    void build_control_flow_graph();
     void convert_to_ssa();
     const uint8_t* compile();
 
@@ -110,6 +114,12 @@ public:
     void jump(ir_label label);
     void ret(ir_value value);
     void phi(const std::vector<std::pair<ir_label, ir_value>>& edges, const ir_variable& to);
+
+    template <class State, class Transfer, class Merge, class Getter, class Setter, class Equal>
+    friend void backward_analysis(ir_compiler& compiler, const Transfer& transfer, const Merge& merge, const Getter& getter, const Setter& setter, const Equal& equal);
+
+    template <class State, class Getter, class Merge>
+    friend State merge_succ_blocks(ir_compiler& compiler, const ir_basic_block& block, const Merge& merge, const Getter& getter);
 };
 
 std::ostream& operator<<(std::ostream& stream, const std::shared_ptr<ir_instruction>& item);

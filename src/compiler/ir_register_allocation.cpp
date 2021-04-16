@@ -1,4 +1,5 @@
 #include "ir_compiler.h"
+#include "ir_data_flow.h"
 #include "register_shortcuts.h"
 #include "../utils/utils.h"
 #include <queue>
@@ -89,75 +90,47 @@ void merge_succ_blocks(unordered_set<ir_variable>& live, unordered_map<ir_label,
 }
 
 void ir_compiler::color_variables() {
-    unordered_map<ir_label, vector<ir_label>> control_flow_in;
-    unordered_map<ir_label, vector<ir_label>> control_flow_out;
-    unordered_map<ir_label, unordered_set<ir_variable>> live_vars;
-
-    for (const auto& block : blocks) {
-        block_map[block.label] = &block;
-        const auto& [last_instruction, _] = block.ir().back();
-        for (const auto& target_label : last_instruction->get_jump_labels()) {
-            control_flow_in[target_label].push_back(block.label);
-            control_flow_out[block.label].push_back(target_label);
-        }
-    }
-
-    queue<ir_label> work_list;
-    unordered_set<ir_label> in_list;
-    for (auto iter = blocks.rbegin(); iter != blocks.rend(); ++iter) {
-        work_list.push(iter->label);
-        in_list.insert(iter->label);
-    }
-
-    while (!work_list.empty()) {
-        auto label = work_list.front();
-        work_list.pop();
-        in_list.erase(label);
-        auto block = block_map[label];
-        unordered_set<ir_variable> live;
-        merge_succ_blocks(live, live_vars, control_flow_out, block_map, block);
-
-        for (auto iter = block->ir().rbegin(); iter != block->ir().rend(); ++iter) {
-            const auto& [instruction, _] = *iter;
-            if (instruction->tag == ir_instruction_tag::phi) continue;
-            for (auto var : instruction->get_out_variables()) {
-                live.erase(*var);
-            }
-            for (const auto& value : instruction->get_in_values()) {
-                if (value->mode != ir_value_mode::var) continue;
-                live.insert(value->var);
-            }
-        }
-        assert(live.size() != live_vars[label].size() || live == live_vars[label])
-        if (live.size() == live_vars[label].size())
-            continue;
-
-        live_vars[label] = live;
-        for (const auto& pred_label : control_flow_in[label]) {
-            if (in_list.find(pred_label) == in_list.end()) {
-                work_list.push(pred_label);
-                in_list.insert(pred_label);
-            }
-        }
-    }
+    backward_analysis<unordered_set<ir_variable>>(
+            *this,
+            [](auto& state, const auto& instruction) {
+                if (instruction->tag == ir_instruction_tag::phi) return;
+                for (auto var : instruction->get_out_variables()) {
+                    state.erase(*var);
+                }
+                for (const auto& value : instruction->get_in_values()) {
+                    if (value->mode != ir_value_mode::var) continue;
+                    state.insert(value->var);
+                }
+            },
+            [](auto& state, const auto& current_block, const auto& succ_block, const auto& in_state) {
+                state.insert(in_state.begin(), in_state.end());
+                for (const auto& [item, _] : succ_block.ir()) {
+                    if (item->tag != ir_instruction_tag::phi) break;
+                    auto phi_instruction = static_pointer_cast<ir_phi_instruction>(item);
+                    state.erase(phi_instruction->to);
+                }
+                for (const auto& [item, _] : succ_block.ir()) {
+                    if (item->tag != ir_instruction_tag::phi) break;
+                    auto phi_instruction = static_pointer_cast<ir_phi_instruction>(item);
+                    for (const auto& [from_label, value] : phi_instruction->edges) {
+                        if (from_label != current_block.label) continue;
+                        if (value.mode != ir_value_mode::var) break;
+                        state.insert(value.var);
+                        break;
+                    }
+                }
+            },
+            [](const auto& data_flow_holder) { return data_flow_holder.live_vars; },
+            [](auto& data_flow_holder, const auto& state) { data_flow_holder.live_vars = state; },
+            [](const auto& holder1, const auto& holder2) { return holder1.live_vars.size() == holder2.live_vars.size(); }
+    );
 
     unordered_map<ir_variable, unordered_set<ir_variable>> interference_graph;
     for (const auto& block : blocks) {
-        unordered_set<ir_variable> live;
-        merge_succ_blocks(live, live_vars, control_flow_out, block_map, &block);
         for (auto iter = block.ir().rbegin(); iter != block.ir().rend(); ++iter) {
-            const auto& [instruction, _] = *iter;
-            if (instruction->tag == ir_instruction_tag::phi) continue;
-            for (auto var : instruction->get_out_variables()) {
-                live.erase(*var);
-            }
-            for (const auto& value : instruction->get_in_values()) {
-                if (value->mode != ir_value_mode::var) continue;
-                live.insert(value->var);
-            }
-
-            for (const auto& var1 : live) {
-                for (const auto& var2 : live) {
+            const auto& [_, holder] = *iter;
+            for (const auto& var1 : holder.live_vars) {
+                for (const auto& var2 : holder.live_vars) {
                     if (var1 == var2) continue;
                     interference_graph[var1].insert(var2);
                     interference_graph[var2].insert(var1);
