@@ -397,7 +397,7 @@ optional<ir_label> find_while_end(unordered_map<ir_label, ir_basic_block*>& bloc
     if (visited.find(label) != visited.end()) return nullopt;
     visited.insert(label);
     auto block = block_map[label];
-    auto& [last, _] = block->ir()[block->ir().size() - 1];
+    auto& [last, _] = block->ir().back();
     if (last->tag == ir_instruction_tag::jump && static_pointer_cast<ir_jump_instruction>(last)->label == while_start) {
         return label;
     }
@@ -414,7 +414,7 @@ optional<tuple<ir_label, ir_label, ir_label>> find_while_loop(unordered_map<ir_l
     if (visited.find(label) != visited.end()) return nullopt;
     visited.insert(label);
     auto block = block_map[label];
-    auto& [last, _] = block->ir()[block->ir().size() - 1];
+    auto& [last, _] = block->ir().back();
     for (const auto& jump_label : last->get_jump_labels()) {
         if (last->tag == ir_instruction_tag::cmp_jump) {
             auto result = find_while_end(block_map, visited, jump_label, label);
@@ -439,7 +439,7 @@ void rename_variables(unordered_map<ir_label, ir_basic_block*>& block_map, unord
             value->var = iter->second;
         }
     }
-    auto& last = block->ir()[block->ir().size() - 1];
+    auto& last = block->ir().back();
     for (const auto& jump_label : last.first->get_jump_labels()) {
         if (jump_label == ignore_label) continue;
         rename_variables(block_map, visited, rename_map, jump_label, ignore_label);
@@ -459,7 +459,7 @@ bool ir_compiler::inverse_loops() {
     //  except for while_start -> loop_first and all jumps from this range to itself (excluding loop_first)
     for (auto& block : blocks) {
         if (block.label == while_start) continue;
-        for (const auto& jump_label : block.ir()[block.ir().size() - 1].first->get_jump_labels()) {
+        for (const auto& jump_label : block.ir().back().first->get_jump_labels()) {
             if (jump_label == loop_first) return false;
         }
     }
@@ -500,8 +500,8 @@ bool ir_compiler::inverse_loops() {
         loop_first_block->emplace_at<ir_phi_instruction>(i, new_edges, instruction->to);
     }
     {
-        assert(while_end_block->ir()[while_end_block->ir().size() - 1].first->tag == ir_instruction_tag::jump)
-        auto last_instruction = while_start_block->ir()[while_start_block->ir().size() - 1].first->clone();
+        assert(while_end_block->ir().back().first->tag == ir_instruction_tag::jump)
+        auto last_instruction = while_start_block->ir().back().first->clone();
         auto last_jump = static_pointer_cast<ir_cmp_jump_instruction>(last_instruction);
         last_jump->mode = negate_cmp_mode(last_jump->mode);
         swap(last_jump->label_true, last_jump->label_false);
@@ -516,7 +516,7 @@ bool ir_compiler::inverse_loops() {
             while_end_last_var_map.insert_or_assign(instruction->to, value);
         }
     }
-    auto [new_jump, _] = while_end_block->ir()[while_end_block->ir().size() - 1];
+    auto [new_jump, _] = while_end_block->ir().back();
     for (auto value : new_jump->get_in_values()) {
         if (value->mode != ir_value_mode::var) continue;
         auto iter = while_end_last_var_map.find(value->var);
@@ -527,7 +527,7 @@ bool ir_compiler::inverse_loops() {
     visited.clear();
     rename_variables(temp_block_map, visited, rename_map, while_start, loop_first);
     ir_label after_label;
-    for (const auto& jump_label : while_start_block->ir()[while_start_block->ir().size() - 1].first->get_jump_labels()) {
+    for (const auto& jump_label : while_start_block->ir().back().first->get_jump_labels()) {
         if (jump_label == loop_first) continue;
         after_label = jump_label;
         break;

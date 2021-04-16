@@ -230,7 +230,7 @@ void code_builder::internal_push_instruction(optional<uint8_t> prefix, bool rex_
             assert(rm.has_value())
             mod_rm = create_mod_rm(rex, *rm, r_loc);
         } else {
-            opcodes[opcodes.size() - 1] |= get_register_index_long(rex, REX_B, r_loc.reg);
+            opcodes.back() |= get_register_index_long(rex, REX_B, r_loc.reg);
         }
     } else {
         assert(!r_in_opcode)
