@@ -8,7 +8,7 @@ using namespace std;
 void ir_compiler::calculate_color_preferences() {
     unordered_map<ir_variable, unordered_map<ir_variable, int>> score;
     for (const auto& block : blocks) {
-        for (const auto& [item, _] : block.ir) {
+        for (const auto& [item, _] : block.ir()) {
             switch (item->tag) {
                 case ir_instruction_tag::phi: {
                     auto instruction = static_pointer_cast<ir_phi_instruction>(item);
@@ -70,12 +70,12 @@ void merge_succ_blocks(unordered_set<ir_variable>& live, unordered_map<ir_label,
     for (const auto& succ_label : control_flow_out[block->label]) {
         live.insert(live_vars[succ_label].begin(), live_vars[succ_label].end());
         auto succ_block = block_map[succ_label];
-        for (const auto& [item, _] : succ_block->ir) {
+        for (const auto& [item, _] : succ_block->ir()) {
             if (item->tag != ir_instruction_tag::phi) break;
             auto phi_instruction = static_pointer_cast<ir_phi_instruction>(item);
             live.erase(phi_instruction->to);
         }
-        for (const auto& [item, _] : succ_block->ir) {
+        for (const auto& [item, _] : succ_block->ir()) {
             if (item->tag != ir_instruction_tag::phi) break;
             auto phi_instruction = static_pointer_cast<ir_phi_instruction>(item);
             for (const auto& [from_label, value] : phi_instruction->edges) {
@@ -95,7 +95,7 @@ void ir_compiler::color_variables() {
 
     for (const auto& block : blocks) {
         block_map[block.label] = &block;
-        const auto& [last_instruction, _] = block.ir.back();
+        const auto& [last_instruction, _] = block.ir().back();
         for (const auto& target_label : last_instruction->get_jump_labels()) {
             control_flow_in[target_label].push_back(block.label);
             control_flow_out[block.label].push_back(target_label);
@@ -117,7 +117,7 @@ void ir_compiler::color_variables() {
         unordered_set<ir_variable> live;
         merge_succ_blocks(live, live_vars, control_flow_out, block_map, block);
 
-        for (auto iter = block->ir.rbegin(); iter != block->ir.rend(); ++iter) {
+        for (auto iter = block->ir().rbegin(); iter != block->ir().rend(); ++iter) {
             const auto& [instruction, _] = *iter;
             if (instruction->tag == ir_instruction_tag::phi) continue;
             for (auto var : instruction->get_out_variables()) {
@@ -145,7 +145,7 @@ void ir_compiler::color_variables() {
     for (const auto& block : blocks) {
         unordered_set<ir_variable> live;
         merge_succ_blocks(live, live_vars, control_flow_out, block_map, &block);
-        for (auto iter = block.ir.rbegin(); iter != block.ir.rend(); ++iter) {
+        for (auto iter = block.ir().rbegin(); iter != block.ir().rend(); ++iter) {
             const auto& [instruction, _] = *iter;
             if (instruction->tag == ir_instruction_tag::phi) continue;
             for (auto var : instruction->get_out_variables()) {
@@ -183,7 +183,7 @@ void ir_compiler::color_variables() {
     vector<jit_register64> float_arg_regs {xmm0, xmm1, xmm2, xmm3};
     for (const auto& block : blocks) {
         if (block.label.id != 0) continue;
-        for (const auto& [item, _] : block.ir) {
+        for (const auto& [item, _] : block.ir()) {
             if (item->tag != ir_instruction_tag::load_argument) continue;
             auto instruction = static_pointer_cast<ir_load_argument_instruction>(item);
             auto storage = get_storage_type(instruction->to.type);
@@ -207,7 +207,7 @@ void ir_compiler::color_variables() {
 
     unordered_set<ir_variable> all_variables;
     for (const auto& block : blocks) {
-        for (const auto& [item, _] : block.ir) {
+        for (const auto& [item, _] : block.ir()) {
             for (const auto& var : item->get_out_variables()) {
                 all_variables.insert(*var);
             }

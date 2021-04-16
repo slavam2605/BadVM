@@ -9,6 +9,7 @@
 #include <vector>
 #include <unordered_map>
 #include <iostream>
+#include <algorithm>
 
 struct ir_data_flow_holder {
 
@@ -17,28 +18,41 @@ struct ir_data_flow_holder {
 struct ir_basic_block {
     ir_label label;
     bool data_flow_valid;
-    std::vector<std::pair<std::shared_ptr<ir_instruction>, ir_data_flow_holder>> ir;
+    std::vector<std::pair<std::shared_ptr<ir_instruction>, ir_data_flow_holder>> _ir;
 
     ir_basic_block(const ir_label& label);
+    const std::vector<std::pair<std::shared_ptr<ir_instruction>, ir_data_flow_holder>>& ir() const;
     void set(int index, const std::shared_ptr<ir_instruction>& instruction);
     void insert(int index, const std::shared_ptr<ir_instruction>& instruction);
+    void insert_all(int index, const std::vector<std::shared_ptr<ir_instruction>>& instructions);
     void push_back(const std::shared_ptr<ir_instruction>& instruction);
+
+    template <class Pred>
+    bool erase_if(const Pred& filter) {
+        auto new_end = std::remove_if(_ir.begin(), _ir.end(), [&filter](const auto& pair) {
+            const auto& [instr, _] = pair;
+            return filter(instr);
+        });
+        if (new_end == _ir.end()) return false;
+        _ir.erase(new_end, _ir.end());
+        return true;
+    }
 
     template <class T, class... Args>
     void emplace_at(int index, Args... args) {
-        ir[index] = make_pair(std::make_shared<T>(args...), ir_data_flow_holder());
+        _ir[index] = make_pair(std::make_shared<T>(args...), ir_data_flow_holder());
         data_flow_valid = false;
     }
 
     template <class T, class... Args>
     void emplace(int index, Args... args) {
-        ir.emplace(ir.begin() + index, std::make_shared<T>(args...), ir_data_flow_holder());
+        _ir.emplace(_ir.begin() + index, std::make_shared<T>(args...), ir_data_flow_holder());
         data_flow_valid = false;
     }
 
     template <class T, class... Args>
     void emplace_back(Args... args) {
-        ir.emplace_back(std::make_shared<T>(args...), ir_data_flow_holder());
+        _ir.emplace_back(std::make_shared<T>(args...), ir_data_flow_holder());
         data_flow_valid = false;
     }
 };
