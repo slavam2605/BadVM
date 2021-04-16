@@ -858,7 +858,12 @@ void ir_compiler::compile_assign(const ir_value& from_value, const jit_value_loc
             break;
         }
         case ir_value_mode::int64: {
-            builder.mov(from_value.int64_value, to);
+            // TODO support ir_value_mode::int32
+            switch (to.bit_size) {
+                case 32: builder.mov(static_cast<int32_t>(from_value.int64_value), to); break;
+                case 64: builder.mov(from_value.int64_value, to); break;
+                default_fail
+            }
             break;
         }
         case ir_value_mode::float64: {

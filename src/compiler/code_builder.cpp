@@ -210,25 +210,40 @@ void code_builder::write_imm32(int offset, uint32_t value) {
     code[offset + 3] = (value >> 24) & 0xFF;
 }
 
-void code_builder::internal_push_instruction(optional<uint8_t> prefix, bool rex_w, jit_value_location rm,
-                                             variant<jit_value_location, uint8_t> r,
+void code_builder::internal_push_instruction(optional<uint8_t> prefix, bool rex_w, optional<jit_value_location> rm,
+                                             variant<jit_value_location, uint8_t> r, bool r_in_opcode,
                                              optional<pair<uint64_t, uint8_t>> imm, vector<uint8_t> opcodes) {
-    if (holds_alternative<jit_value_location>(r)) {
-        assert(rm.bit_size == get<jit_value_location>(r).bit_size)
+    if (rm.has_value() && holds_alternative<jit_value_location>(r)) {
+        assert(rm->bit_size == get<jit_value_location>(r).bit_size)
     }
-    auto bit_size = rm.bit_size;
+    auto bit_size = rm.has_value() ? rm->bit_size :
+            (holds_alternative<jit_value_location>(r) ? get<jit_value_location>(r).bit_size
+            : throw runtime_error("both r and rm are missing, can't get an instruction bit size"));
     assert(bit_size == 32 || bit_size == 64)
 
     auto rex = REX;
     if (bit_size == 64 && rex_w) rex |= REX_W;
     uint8_t mod_rm;
-    if (holds_alternative<jit_value_location>(r)) mod_rm = create_mod_rm(rex, rm, get<jit_value_location>(r));
-    if (holds_alternative<uint8_t>(r)) mod_rm = create_mod_rm_reg_digit(rex, rm, get<uint8_t>(r));
+    if (holds_alternative<jit_value_location>(r)) {
+        auto r_loc = get<jit_value_location>(r);
+        if (!r_in_opcode) {
+            assert(rm.has_value())
+            mod_rm = create_mod_rm(rex, *rm, r_loc);
+        } else {
+            opcodes[opcodes.size() - 1] |= get_register_index_long(rex, REX_B, r_loc.reg);
+        }
+    } else {
+        assert(!r_in_opcode)
+    }
+    if (holds_alternative<uint8_t>(r)) {
+        assert(rm.has_value())
+        mod_rm = create_mod_rm_reg_digit(rex, *rm, get<uint8_t>(r));
+    }
 
     if (prefix.has_value()) code.push_back(*prefix);
     if (bit_size == 64 || rex != REX) code.push_back(rex);
     code.insert(code.end(), opcodes.begin(), opcodes.end());
-    code.push_back(mod_rm);
+    if (!r_in_opcode) code.push_back(mod_rm);
     if (imm.has_value()) {
         auto [value, size] = *imm;
         switch (size) {
@@ -241,31 +256,39 @@ void code_builder::internal_push_instruction(optional<uint8_t> prefix, bool rex_
 }
 
 void code_builder::instr_rexw_rm_r(jit_value_location rm, jit_value_location r, uint8_t opcode) {
-    internal_push_instruction(nullopt, true, rm, r, nullopt, {opcode});
+    internal_push_instruction(nullopt, true, rm, r, false, nullopt, {opcode});
 }
 
 void code_builder::instr_rexw_rm_r(jit_value_location rm, jit_value_location r, uint8_t opcode1, uint8_t opcode2) {
-    internal_push_instruction(nullopt, true, rm, r, nullopt, {opcode1, opcode2});
+    internal_push_instruction(nullopt, true, rm, r, false, nullopt, {opcode1, opcode2});
 }
 
 void code_builder::instr_prefix_rm_r(uint8_t prefix, jit_value_location rm, jit_value_location r, uint8_t opcode1, uint8_t opcode2) {
-    internal_push_instruction(prefix, false, rm, r, nullopt, {opcode1, opcode2});
+    internal_push_instruction(prefix, false, rm, r, false, nullopt, {opcode1, opcode2});
 }
 
 void code_builder::instr_rexw_rm_r_imm32(jit_value_location rm, jit_value_location r, uint8_t opcode, uint32_t imm) {
-    internal_push_instruction(nullopt, true, rm, r, make_pair(imm, 32), {opcode});
+    internal_push_instruction(nullopt, true, rm, r, false, make_pair(imm, 32), {opcode});
 }
 
 void code_builder::instr_rexw_rm_rdigit_imm32(jit_value_location rm, uint8_t reg_digit, uint8_t opcode, uint32_t imm) {
-    internal_push_instruction(nullopt, true, rm, reg_digit, make_pair(imm, 32), {opcode});
+    internal_push_instruction(nullopt, true, rm, reg_digit, false, make_pair(imm, 32), {opcode});
 }
 
 void code_builder::instr_rexw_rm_rdigit_imm8(jit_value_location rm, uint8_t reg_digit, uint8_t opcode, uint8_t imm) {
-    internal_push_instruction(nullopt, true, rm, reg_digit, make_pair(imm, 8), {opcode});
+    internal_push_instruction(nullopt, true, rm, reg_digit, false, make_pair(imm, 8), {opcode});
 }
 
 void code_builder::instr_rexw_rm_rdigit(jit_value_location rm, uint8_t reg_digit, uint8_t opcode) {
-    internal_push_instruction(nullopt, REX_W, rm, reg_digit, nullopt, {opcode});
+    internal_push_instruction(nullopt, REX_W, rm, reg_digit, false, nullopt, {opcode});
+}
+
+void code_builder::instr_rexw_r_in_opcode_imm64(jit_value_location r, uint8_t opcode, uint64_t imm) {
+    internal_push_instruction(nullopt, REX_W, nullopt, r, true, make_pair(imm, 64), {opcode});
+}
+
+void code_builder::instr_rexw_r_in_opcode_imm32(jit_value_location r, uint8_t opcode, uint32_t imm) {
+    internal_push_instruction(nullopt, REX_W, nullopt, r, true, make_pair(imm, 32), {opcode});
 }
 
 void code_builder::mov(jit_value_location from, jit_value_location to) {
@@ -275,12 +298,12 @@ void code_builder::mov(jit_value_location from, jit_value_location to) {
 
 void code_builder::mov(int64_t from, jit_value_location to) {
     log(cout << "    mov " << to << ", " << from << endl;)
-    auto rex = REX_W;
-    auto reg_index = get_register_index_long(rex, REX_B, to.reg);
+    instr_rexw_r_in_opcode_imm64(to, 0xB8, from);
+}
 
-    code.push_back(rex);
-    code.push_back(0xB8 | reg_index);
-    push_imm64(from);
+void code_builder::mov(int32_t from, jit_value_location to) {
+    log(cout << "    mov " << to << ", " << from << endl;)
+    instr_rexw_r_in_opcode_imm32(to, 0xB8, from);
 }
 
 void movsx32_64(vector<uint8_t>& code, jit_value_location from, jit_value_location to) {
@@ -348,6 +371,11 @@ void code_builder::imul(jit_value_location from, jit_value_location to) {
     instr_rexw_rm_r(from, to, 0x0F, 0xAF);
 }
 
+void code_builder::imul(jit_value_location value) {
+    log(cout << "    imul " << value << endl;)
+    instr_rexw_rm_rdigit(value, 5, 0xF7);
+}
+
 void code_builder::imul(jit_value_location first, int32_t second, jit_value_location to) {
     log(cout << "    imul " << to << ", " << first << ", " << second << endl;)
     instr_rexw_rm_r_imm32(first, to, 0x69, second);
@@ -366,6 +394,11 @@ void code_builder::neg(jit_value_location value) {
 void code_builder::sar(jit_value_location first, int8_t second) {
     log(cout << "    sar " << first << ", " << (int) second << endl;)
     instr_rexw_rm_rdigit_imm8(first, 7, 0xC1, second);
+}
+
+void code_builder::shr(jit_value_location first, int8_t second) {
+    log(cout << "    shr " << first << ", " << (int) second << endl;)
+    instr_rexw_rm_rdigit_imm8(first, 5, 0xC1, second);
 }
 
 void code_builder::cqo() {

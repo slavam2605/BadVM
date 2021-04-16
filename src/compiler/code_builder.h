@@ -80,8 +80,8 @@ class code_builder {
     void push_imm64(uint64_t value);
     void write_imm32(int offset, uint32_t value);
     void jcc32(uint8_t opcode, int label_id);
-    void internal_push_instruction(std::optional<uint8_t> prefix, bool rex_w, jit_value_location rm,
-                                   std::variant<jit_value_location, uint8_t> r,
+    void internal_push_instruction(std::optional<uint8_t> prefix, bool rex_w, std::optional<jit_value_location> rm,
+                                   std::variant<jit_value_location, uint8_t> r, bool r_in_opcode,
                                    std::optional<std::pair<uint64_t, uint8_t>> imm, std::vector<uint8_t> opcodes);
     void instr_rexw_rm_r(jit_value_location rm, jit_value_location r, uint8_t opcode);
     void instr_rexw_rm_r(jit_value_location rm, jit_value_location r, uint8_t opcode1, uint8_t opcode2);
@@ -90,6 +90,8 @@ class code_builder {
     void instr_rexw_rm_rdigit_imm32(jit_value_location rm, uint8_t reg_digit, uint8_t opcode, uint32_t imm);
     void instr_rexw_rm_rdigit_imm8(jit_value_location rm, uint8_t reg_digit, uint8_t opcode, uint8_t imm);
     void instr_rexw_rm_rdigit(jit_value_location rm, uint8_t reg_digit, uint8_t opcode);
+    void instr_rexw_r_in_opcode_imm64(jit_value_location r, uint8_t opcode, uint64_t imm);
+    void instr_rexw_r_in_opcode_imm32(jit_value_location r, uint8_t opcode, uint32_t imm);
 public:
     const std::vector<uint8_t>& get_code() const;
     int current_offset() const;
@@ -99,6 +101,7 @@ public:
 
     void mov(jit_value_location from, jit_value_location to);
     void mov(int64_t from, jit_value_location to);
+    void mov(int32_t from, jit_value_location to);
     void movsx(jit_value_location from, jit_value_location to);
     void cmovl(jit_value_location from, jit_value_location to);
     void cmovg(jit_value_location from, jit_value_location to);
@@ -107,10 +110,12 @@ public:
     void add(int32_t from, jit_value_location to);
     void sub(jit_value_location from, jit_value_location to);
     void sub(int32_t from, jit_value_location to);
+    void imul(jit_value_location value);
     void imul(jit_value_location from, jit_value_location to);
     void imul(jit_value_location first, int32_t second, jit_value_location to);
     void idiv(jit_value_location value);
     void neg(jit_value_location value);
+    void shr(jit_value_location first, int8_t second);
     void sar(jit_value_location first, int8_t second);
     void cqo();
     void cmp(jit_value_location first, jit_value_location second);
