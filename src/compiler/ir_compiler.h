@@ -10,11 +10,37 @@
 #include <unordered_map>
 #include <iostream>
 
+struct ir_data_flow_holder {
+
+};
+
 struct ir_basic_block {
     ir_label label;
-    std::vector<std::shared_ptr<ir_instruction>> ir;
+    bool data_flow_valid;
+    std::vector<std::pair<std::shared_ptr<ir_instruction>, ir_data_flow_holder>> ir;
 
     ir_basic_block(const ir_label& label);
+    void set(int index, const std::shared_ptr<ir_instruction>& instruction);
+    void insert(int index, const std::shared_ptr<ir_instruction>& instruction);
+    void push_back(const std::shared_ptr<ir_instruction>& instruction);
+
+    template <class T, class... Args>
+    void emplace_at(int index, Args... args) {
+        ir[index] = make_pair(std::make_shared<T>(args...), ir_data_flow_holder());
+        data_flow_valid = false;
+    }
+
+    template <class T, class... Args>
+    void emplace(int index, Args... args) {
+        ir.emplace(ir.begin() + index, std::make_shared<T>(args...), ir_data_flow_holder());
+        data_flow_valid = false;
+    }
+
+    template <class T, class... Args>
+    void emplace_back(Args... args) {
+        ir.emplace_back(std::make_shared<T>(args...), ir_data_flow_holder());
+        data_flow_valid = false;
+    }
 };
 
 class ir_compiler {

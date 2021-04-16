@@ -21,7 +21,24 @@ ir_compiler::ir_compiler(code_manager& manager)
         : manager(manager), int_reg_list{no_register, rax, rcx, rdx, r8, r9/*, r10, r11*/},
           float_reg_list{no_register, xmm0, xmm1, xmm2, xmm3, xmm4, xmm5} {}
 
-ir_basic_block::ir_basic_block(const ir_label& label) : label(label) {}
+ir_basic_block::ir_basic_block(const ir_label& label) : label(label) {
+    data_flow_valid = false;
+}
+
+void ir_basic_block::set(int index, const std::shared_ptr<ir_instruction>& instruction) {
+    ir[index] = make_pair(instruction, ir_data_flow_holder());
+    data_flow_valid = false;
+}
+
+void ir_basic_block::insert(int index, const std::shared_ptr<ir_instruction>& instruction) {
+    ir.emplace(ir.begin() + index, instruction, ir_data_flow_holder());
+    data_flow_valid = false;
+}
+
+void ir_basic_block::push_back(const std::shared_ptr<ir_instruction>& instruction) {
+    ir.emplace_back(instruction, ir_data_flow_holder());
+    data_flow_valid = false;
+}
 
 int ir_compiler::ir_offset() const {
     return ir.size();
@@ -108,8 +125,8 @@ void ir_compiler::convert_to_ssa() {
         auto label_iter = offset_to_label.find(ir_offset);
         if (label_iter != offset_to_label.end()) {
             auto& block = blocks.back();
-            if (block.ir.back()->get_jump_labels().empty() && !block.ir.back()->exit_function()) {
-                block.ir.push_back(make_shared<ir_jump_instruction>(label_iter->second));
+            if (block.ir.back().first->get_jump_labels().empty() && !block.ir.back().first->exit_function()) {
+                block.emplace_back<ir_jump_instruction>(label_iter->second);
             }
             current_label = label_iter->second;
             blocks.push_back(ir_basic_block(current_label));
@@ -117,26 +134,27 @@ void ir_compiler::convert_to_ssa() {
 
         auto& block = blocks.back();
         assert(block.label == current_label)
-        block.ir.push_back(ir[ir_offset]);
+        block.push_back(ir[ir_offset]);
     }
 
     unordered_map<int, ir_variable_type> all_var_ids;
     for (const auto& block : blocks) {
         for (int i = 0; i < block.ir.size(); i++) {
-            for (const auto& value : block.ir[i]->get_in_values()) {
+            const auto& [item, _] = block.ir[i];
+            for (const auto& value : item->get_in_values()) {
                 if (value->mode != ir_value_mode::var) continue;
                 all_var_ids[value->var.id] = value->var.type;
             }
-            for (const auto& var : block.ir[i]->get_out_variables()) {
+            for (const auto& var : item->get_out_variables()) {
                 all_var_ids[var->id] = var->type;
             }
 
-            const auto& jump_labels = block.ir[i]->get_jump_labels();
+            const auto& jump_labels = item->get_jump_labels();
             if (i < block.ir.size() - 1) {
                 assert(jump_labels.empty())
                 continue;
             }
-            assert(!jump_labels.empty() || block.ir[i]->exit_function())
+            assert(!jump_labels.empty() || item->exit_function())
             for (const auto& target_label : jump_labels) {
                 control_flow_in[target_label].push_back(block.label);
             }
@@ -149,12 +167,12 @@ void ir_compiler::convert_to_ssa() {
             for (const auto& from_label : control_flow_in[block.label]) {
                 edges.emplace_back(from_label, ir_variable(var_id, 0, type));
             }
-            block.ir.insert(block.ir.begin(), make_shared<ir_phi_instruction>(edges, ir_variable(var_id, 0, type)));
+            block.emplace<ir_phi_instruction>(0, edges, ir_variable(var_id, 0, type));
         }
     }
 
     for (auto& block : blocks) {
-        for (const auto& instruction : block.ir) {
+        for (const auto& [instruction, _] : block.ir) {
             if (instruction->tag != ir_instruction_tag::phi) {
                 for (auto value : instruction->get_in_values()) {
                     if (value->mode != ir_value_mode::var) continue;
@@ -165,10 +183,10 @@ void ir_compiler::convert_to_ssa() {
                 var->version = ++last_var_version[var->id];
             }
         }
-        for (const auto& label : block.ir.back()->get_jump_labels()) {
+        for (const auto& label : block.ir.back().first->get_jump_labels()) {
             for (auto& target_block : blocks) {
                 if (target_block.label != label) continue;
-                for (const auto& instruction : target_block.ir) {
+                for (const auto& [instruction, _] : target_block.ir) {
                     if (instruction->tag != ir_instruction_tag::phi) continue;
                     auto phi_instruction = static_pointer_cast<ir_phi_instruction>(instruction);
                     for (auto& [from_label, value] : phi_instruction->edges) {
@@ -186,7 +204,7 @@ bool remove_unused_vars(vector<ir_basic_block>& blocks) {
     bool changed = false;
     unordered_set<ir_variable> used_vars;
     for (const auto& block : blocks) {
-        for (const auto& instruction : block.ir) {
+        for (const auto& [instruction, _] : block.ir) {
             for (const auto& value : instruction->get_in_values()) {
                 if (value->mode != ir_value_mode::var) continue;
                 used_vars.insert(value->var);
@@ -194,7 +212,8 @@ bool remove_unused_vars(vector<ir_basic_block>& blocks) {
         }
     }
     for (auto& block : blocks) {
-        auto new_end = remove_if(block.ir.begin(), block.ir.end(), [&](const shared_ptr<ir_instruction>& instr) {
+        auto new_end = remove_if(block.ir.begin(), block.ir.end(), [&](const pair<shared_ptr<ir_instruction>, ir_data_flow_holder>& pair) {
+            const auto& [instr, _] = pair;
             if (!instr->is_pure()) return false;
             auto out_vars = instr->get_out_variables();
             if (out_vars.empty()) return false;
@@ -214,14 +233,14 @@ bool inline_assigns(vector<ir_basic_block>& blocks) {
     bool changed = false;
     unordered_map<ir_variable, ir_value> assign_map;
     for (const auto& block : blocks) {
-        for (const auto& item : block.ir) {
+        for (const auto& [item, _] : block.ir) {
             if (item->tag != ir_instruction_tag::assign) continue;
             auto instruction = static_pointer_cast<ir_assign_instruction>(item);
             assign_map.insert_or_assign(instruction->to, instruction->from);
         }
     }
     for (auto& block : blocks) {
-        for (auto& instruction : block.ir) {
+        for (auto& [instruction, _] : block.ir) {
             for (auto value : instruction->get_in_values()) {
                 if (value->mode != ir_value_mode::var) continue;
                 auto iter = assign_map.find(value->var);
@@ -238,10 +257,10 @@ bool eliminate_trivial_phi(vector<ir_basic_block>& blocks) {
     bool changed = false;
     for (auto& block : blocks) {
         for (int i = 0; i < block.ir.size(); i++) {
-            if (block.ir[i]->tag != ir_instruction_tag::phi) continue;
-            auto instruction = static_pointer_cast<ir_phi_instruction>(block.ir[i]);
+            if (block.ir[i].first->tag != ir_instruction_tag::phi) continue;
+            auto instruction = static_pointer_cast<ir_phi_instruction>(block.ir[i].first);
             if (instruction->edges.size() == 1) {
-                block.ir[i] = make_shared<ir_assign_instruction>(instruction->edges[0].second, instruction->to);
+                block.emplace_at<ir_assign_instruction>(i, instruction->edges[0].second, instruction->to);
                 changed = true;
             } else if (instruction->edges.size() > 1) {
                 optional<ir_value> unique;
@@ -251,7 +270,7 @@ bool eliminate_trivial_phi(vector<ir_basic_block>& blocks) {
                     unique = value;
                 }
                 assert(unique.has_value())
-                block.ir[i] = make_shared<ir_assign_instruction>(*unique, instruction->to);
+                block.emplace_at<ir_assign_instruction>(i, *unique, instruction->to);
                 changed = true;
                 skip:;
             }
@@ -264,12 +283,13 @@ bool simplify_instructions(vector<ir_basic_block>& blocks) {
     bool changed = false;
     for (auto& block : blocks) {
         for (int i = 0; i < block.ir.size(); i++) {
-            for (const auto& item : block.ir[i]->get_in_values()) {
+            const auto& [item, _] = block.ir[i];
+            for (const auto& item : item->get_in_values()) {
                 if (item->mode != ir_value_mode::int64) goto ir_loop_end;
             }
-            switch (block.ir[i]->tag) {
+            switch (item->tag) {
                 case ir_instruction_tag::bin_op: {
-                    auto instruction = static_pointer_cast<ir_bin_op_insruction>(block.ir[i]);
+                    auto instruction = static_pointer_cast<ir_bin_op_insruction>(item);
                     auto first = instruction->first.int64_value;
                     auto second = instruction->second.int64_value;
                     int64_t value;
@@ -281,12 +301,12 @@ bool simplify_instructions(vector<ir_basic_block>& blocks) {
                         case ir_bin_op::rem: value = first % second; break;
                         default_fail
                     }
-                    block.ir[i] = make_shared<ir_assign_instruction>(ir_value(value), instruction->to);
+                    block.emplace_at<ir_assign_instruction>(i, ir_value(value), instruction->to);
                     changed = true;
                     break;
                 }
                 case ir_instruction_tag::cmp_jump: {
-                    auto instruction = static_pointer_cast<ir_cmp_jump_instruction>(block.ir[i]);
+                    auto instruction = static_pointer_cast<ir_cmp_jump_instruction>(item);
                     auto first = instruction->first.int64_value;
                     auto second = instruction->second.int64_value;
                     bool value;
@@ -300,7 +320,7 @@ bool simplify_instructions(vector<ir_basic_block>& blocks) {
                         default_fail
                     }
                     auto label = value ? instruction->label_true : instruction->label_false;
-                    block.ir[i] = make_shared<ir_jump_instruction>(label);
+                    block.emplace_at<ir_jump_instruction>(i, label);
                     changed = true;
                     break;
                 }
@@ -321,7 +341,7 @@ bool remove_unused_blocks(vector<ir_basic_block>& blocks) {
     unordered_set<ir_label> used_labels;
     used_labels.insert(ir_label(0)); // root block
     for (const auto& block : blocks) {
-        for (const auto& label : block.ir.back()->get_jump_labels()) {
+        for (const auto& label : block.ir.back().first->get_jump_labels()) {
             used_labels.insert(label);
         }
     }
@@ -339,7 +359,7 @@ bool combine_compare_jump(vector<ir_basic_block>& blocks) {
     bool changed = false;
     unordered_map<ir_variable, tuple<ir_value, ir_value, ir_cmp_nan_mode>> compare_assigns;
     for (const auto& block : blocks) {
-        for (const auto& item : block.ir) {
+        for (const auto& [item, _] : block.ir) {
             if (item->tag != ir_instruction_tag::bin_op) continue;
             auto instruction = static_pointer_cast<ir_bin_op_insruction>(item);
             if (instruction->op != ir_bin_op::cmp) continue;
@@ -349,15 +369,15 @@ bool combine_compare_jump(vector<ir_basic_block>& blocks) {
 
     for (auto& block : blocks) {
         for (int i = 0; i < block.ir.size(); i++) {
-            const auto& item = block.ir[i];
+            const auto& [item, _] = block.ir[i];
             if (item->tag != ir_instruction_tag::cmp_jump) continue;
             auto instruction = static_pointer_cast<ir_cmp_jump_instruction>(item);
             if (instruction->first.mode != ir_value_mode::var) continue;
             auto iter = compare_assigns.find(instruction->first.var);
             if (iter == compare_assigns.end()) continue;
             auto [new_first, new_second, nan_mode] = iter->second;
-            block.ir[i] = make_shared<ir_cmp_jump_instruction>(new_first, new_second, instruction->mode,
-                                                               instruction->label_true, instruction->label_false, nan_mode);
+            block.emplace_at<ir_cmp_jump_instruction>(i, new_first, new_second, instruction->mode,
+                                                      instruction->label_true, instruction->label_false, nan_mode);
             changed = true;
         }
     }
@@ -369,7 +389,7 @@ optional<ir_label> find_while_end(unordered_map<ir_label, ir_basic_block*>& bloc
     if (visited.find(label) != visited.end()) return nullopt;
     visited.insert(label);
     auto block = block_map[label];
-    auto& last = block->ir[block->ir.size() - 1];
+    auto& [last, _] = block->ir[block->ir.size() - 1];
     if (last->tag == ir_instruction_tag::jump && static_pointer_cast<ir_jump_instruction>(last)->label == while_start) {
         return label;
     }
@@ -386,7 +406,7 @@ optional<tuple<ir_label, ir_label, ir_label>> find_while_loop(unordered_map<ir_l
     if (visited.find(label) != visited.end()) return nullopt;
     visited.insert(label);
     auto block = block_map[label];
-    auto& last = block->ir[block->ir.size() - 1];
+    auto& [last, _] = block->ir[block->ir.size() - 1];
     for (const auto& jump_label : last->get_jump_labels()) {
         if (last->tag == ir_instruction_tag::cmp_jump) {
             auto result = find_while_end(block_map, visited, jump_label, label);
@@ -403,7 +423,7 @@ void rename_variables(unordered_map<ir_label, ir_basic_block*>& block_map, unord
     if (visited.find(label) != visited.end()) return;
     visited.insert(label);
     auto block = block_map[label];
-    for (auto& item : block->ir) {
+    for (auto& [item, _] : block->ir) {
         for (auto value : item->get_in_values()) {
             if (value->mode != ir_value_mode::var) continue;
             auto iter = rename_map.find(value->var);
@@ -412,7 +432,7 @@ void rename_variables(unordered_map<ir_label, ir_basic_block*>& block_map, unord
         }
     }
     auto& last = block->ir[block->ir.size() - 1];
-    for (const auto& jump_label : last->get_jump_labels()) {
+    for (const auto& jump_label : last.first->get_jump_labels()) {
         if (jump_label == ignore_label) continue;
         rename_variables(block_map, visited, rename_map, jump_label, ignore_label);
     }
@@ -431,7 +451,7 @@ bool ir_compiler::inverse_loops() {
     //  except for while_start -> loop_first and all jumps from this range to itself (excluding loop_first)
     for (auto& block : blocks) {
         if (block.label == while_start) continue;
-        for (const auto& jump_label : block.ir[block.ir.size() - 1]->get_jump_labels()) {
+        for (const auto& jump_label : block.ir[block.ir.size() - 1].first->get_jump_labels()) {
             if (jump_label == loop_first) return false;
         }
     }
@@ -440,12 +460,12 @@ bool ir_compiler::inverse_loops() {
     auto loop_first_block = temp_block_map[loop_first];
     auto while_end_block = temp_block_map[while_end];
     for (auto iter = while_start_block->ir.rbegin(); iter != while_start_block->ir.rend(); ++iter) {
-        if (!(*iter)->get_jump_labels().empty()) continue;
-        loop_first_block->ir.insert(loop_first_block->ir.begin(), (*iter)->clone());
+        if (!iter->first->get_jump_labels().empty()) continue;
+        loop_first_block->insert(0, iter->first->clone());
     }
     unordered_map<ir_variable, ir_variable> rename_map;
     for (int i = 0; i < while_start_block->ir.size(); i++) {
-        const auto& item = while_start_block->ir[i];
+        const auto& [item, _] = while_start_block->ir[i];
         if (item->tag != ir_instruction_tag::phi) continue;
         auto instruction = static_pointer_cast<ir_phi_instruction>(item);
         vector<pair<ir_label, ir_value>> new_edges;
@@ -456,10 +476,10 @@ bool ir_compiler::inverse_loops() {
         auto new_version = ++last_var_version[instruction->to.id];
         auto new_var = ir_variable(instruction->to.id, new_version, instruction->to.type);
         rename_map[instruction->to] = new_var;
-        while_start_block->ir[i] = make_shared<ir_phi_instruction>(new_edges, new_var);
+        while_start_block->emplace_at<ir_phi_instruction>(i, new_edges, new_var);
     }
     for (int i = 0; i < loop_first_block->ir.size(); i++) {
-        const auto& item = loop_first_block->ir[i];
+        const auto& [item, _] = loop_first_block->ir[i];
         if (item->tag != ir_instruction_tag::phi) continue;
         auto instruction = static_pointer_cast<ir_phi_instruction>(item);
         vector<pair<ir_label, ir_value>> new_edges;
@@ -469,18 +489,18 @@ bool ir_compiler::inverse_loops() {
             break;
         }
         new_edges.emplace_back(while_start, ir_variable(instruction->to.id, last_var_version[instruction->to.id], instruction->to.type));
-        loop_first_block->ir[i] = make_shared<ir_phi_instruction>(new_edges, instruction->to);
+        loop_first_block->emplace_at<ir_phi_instruction>(i, new_edges, instruction->to);
     }
     {
-        assert(while_end_block->ir[while_end_block->ir.size() - 1]->tag == ir_instruction_tag::jump)
-        auto last_instruction = while_start_block->ir[while_start_block->ir.size() - 1]->clone();
+        assert(while_end_block->ir[while_end_block->ir.size() - 1].first->tag == ir_instruction_tag::jump)
+        auto last_instruction = while_start_block->ir[while_start_block->ir.size() - 1].first->clone();
         auto last_jump = static_pointer_cast<ir_cmp_jump_instruction>(last_instruction);
         last_jump->mode = negate_cmp_mode(last_jump->mode);
         swap(last_jump->label_true, last_jump->label_false);
-        while_end_block->ir[while_end_block->ir.size() - 1] = last_jump;
+        while_end_block->set(while_end_block->ir.size() - 1, last_jump);
     }
     unordered_map<ir_variable, ir_value> while_end_last_var_map;
-    for (const auto& item : loop_first_block->ir) {
+    for (const auto& [item, _] : loop_first_block->ir) {
         if (item->tag != ir_instruction_tag::phi) continue;
         auto instruction = static_pointer_cast<ir_phi_instruction>(item);
         for (const auto& [label, value] : instruction->edges) {
@@ -488,7 +508,7 @@ bool ir_compiler::inverse_loops() {
             while_end_last_var_map.insert_or_assign(instruction->to, value);
         }
     }
-    auto new_jump = while_end_block->ir[while_end_block->ir.size() - 1];
+    auto [new_jump, _] = while_end_block->ir[while_end_block->ir.size() - 1];
     for (auto value : new_jump->get_in_values()) {
         if (value->mode != ir_value_mode::var) continue;
         auto iter = while_end_last_var_map.find(value->var);
@@ -499,7 +519,7 @@ bool ir_compiler::inverse_loops() {
     visited.clear();
     rename_variables(temp_block_map, visited, rename_map, while_start, loop_first);
     ir_label after_label;
-    for (const auto& jump_label : while_start_block->ir[while_start_block->ir.size() - 1]->get_jump_labels()) {
+    for (const auto& jump_label : while_start_block->ir[while_start_block->ir.size() - 1].first->get_jump_labels()) {
         if (jump_label == loop_first) continue;
         after_label = jump_label;
         break;
@@ -508,7 +528,7 @@ bool ir_compiler::inverse_loops() {
     auto after_block = temp_block_map[after_label];
 
     unordered_map<ir_variable, ir_value> reassign_map;
-    for (const auto& item : loop_first_block->ir) {
+    for (const auto& [item, _] : loop_first_block->ir) {
         if (item->tag != ir_instruction_tag::phi) continue;
         auto instruction = static_pointer_cast<ir_phi_instruction>(item);
         optional<ir_variable> from_while_start;
@@ -541,7 +561,10 @@ bool ir_compiler::inverse_loops() {
     }
     visited.clear();
     rename_variables(temp_block_map, visited, new_rename_map, after_label, ir_label());
-    after_block->ir.insert(after_block->ir.begin(), to_add.begin(), to_add.end());
+    // TODO implement ir_basic_block.insert(to_iter, from_iter_begin, from_iter_end)
+    for (auto iter = to_add.rbegin(); iter != to_add.rend(); ++iter) {
+        after_block->insert(0, *iter);
+    }
 
     return true;
 }
@@ -598,7 +621,7 @@ void ir_compiler::compile_phi_before_jump(const ir_label& current_label, const i
     vector<jit_value_location> assign_order;
     vector<pair<jit_value_location, ir_value>> not_var_assign_list;
 
-    for (const auto& item : target_block->ir) {
+    for (const auto& [item, _] : target_block->ir) {
         if (item->tag != ir_instruction_tag::phi) break; // assume all phi's are in the beginning of a block
         auto instruction = static_pointer_cast<ir_phi_instruction>(item);
         for (const auto& [a_label, value] : instruction->edges) {
@@ -634,7 +657,7 @@ void ir_compiler::compile_phi_before_jump(const ir_label& current_label, const i
 }
 
 bool ir_compiler::has_actual_phi_assigns(const ir_basic_block& block, const ir_label& from) {
-    for (const auto& item : block.ir) {
+    for (const auto& [item, _] : block.ir) {
         if (item->tag != ir_instruction_tag::phi) break;
         auto instruction = static_pointer_cast<ir_phi_instruction>(item);
         auto to_loc = get_location(instruction->to);
@@ -656,7 +679,7 @@ const uint8_t* ir_compiler::compile_ssa() {
         const auto& block = blocks[i];
         builder.mark_label(block.label.id);
         for (int j = 0; j < block.ir.size(); j++) {
-            const auto& item = block.ir[j];
+            const auto& [item, _] = block.ir[j];
             switch (item->tag) {
                 case ir_instruction_tag::load_argument: {
                     // Value is already loaded into the target register, no code is needed

@@ -127,7 +127,7 @@ void ir_compiler::pretty_print(ostream& stream) {
 
 void ir_compiler::pretty_print(ostream& stream, const ir_basic_block& block) {
     stream << "L" << block.label.id << ":" << endl;
-    for (const auto& item : block.ir) {
+    for (const auto& [item, _] : block.ir) {
         stream << item;
     }
 }
