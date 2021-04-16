@@ -691,6 +691,30 @@ bool ir_compiler::has_actual_phi_assigns(const ir_basic_block& block, const ir_l
     return false;
 }
 
+jit_register64 ir_compiler::get_temp_register(const ir_data_flow_pair& data, const ir_storage_type& storage,
+                                              const jit_register64& preferred, const vector<jit_register64>& occupied) {
+    unordered_set<jit_register64> live;
+    live.insert(occupied.begin(), occupied.end());
+    for (const auto& var : data.data_out.live_vars) {
+        if (get_storage_type(var.type) != storage) continue;
+        auto loc = get_location(var);
+        if (loc.reg == no_register) continue;
+        live.insert(loc.reg);
+    }
+    if (preferred != no_register && live.find(preferred) == live.end())
+        return preferred;
+
+    const auto& reg_list = storage == ir_storage_type::ir_int ? int_reg_list :
+            storage == ir_storage_type::ir_float ? float_reg_list :
+            throw runtime_error("Unexpected storage type");
+    for (const auto& reg : reg_list) {
+        if (reg == no_register) continue;
+        if (live.find(reg) == live.end())
+            return reg;
+    }
+    throw runtime_error("Failed to find a free temporary register");
+}
+
 const uint8_t* ir_compiler::compile_ssa() {
     cout << endl << "---- x86-64 assembler code ----" << endl;
     assert(blocks[0].label.id == 0) // must start from root block
@@ -698,7 +722,11 @@ const uint8_t* ir_compiler::compile_ssa() {
         const auto& block = blocks[i];
         builder.mark_label(block.label.id);
         for (int j = 0; j < block.ir().size(); j++) {
-            const auto& [item, _] = block.ir()[j];
+            const auto& [item, data_flow_holder_in] = block.ir()[j];
+            auto data_flow_info = ir_data_flow_pair(
+                    data_flow_holder_in,
+                    j == block.ir().size() - 1 ? block.out_data_flow : block.ir()[j + 1].second
+            );
             switch (item->tag) {
                 case ir_instruction_tag::load_argument: {
                     // Value is already loaded into the target register, no code is needed
@@ -713,7 +741,7 @@ const uint8_t* ir_compiler::compile_ssa() {
                 }
                 case ir_instruction_tag::bin_op: {
                     auto instruction = static_pointer_cast<ir_bin_op_insruction>(item);
-                    compile_bin_op(instruction);
+                    compile_bin_op(instruction, data_flow_info);
                     break;
                 }
                 case ir_instruction_tag::convert: {

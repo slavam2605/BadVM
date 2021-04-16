@@ -15,6 +15,14 @@ struct ir_data_flow_holder {
     std::unordered_set<ir_variable> live_vars;
 };
 
+struct ir_data_flow_pair {
+    const ir_data_flow_holder& data_in;
+    const ir_data_flow_holder& data_out;
+
+    ir_data_flow_pair(const ir_data_flow_holder& dataIn, const ir_data_flow_holder& dataOut)
+            : data_in(dataIn), data_out(dataOut) {}
+};
+
 struct ir_basic_block {
     ir_label label;
     bool data_flow_valid;
@@ -91,12 +99,15 @@ public:
                          std::unordered_map<jit_value_location, int>& visited_version,
                          std::unordered_map<jit_value_location, jit_value_location>& temp);
     void compile_phi_before_jump(const ir_label& current_label, const ir_basic_block* target_block);
-    void compile_int32_power2_div(jit_value_location first, int32_t second, jit_value_location to);
-    void compile_int32_div(jit_value_location first, int32_t second, jit_value_location to);
+    void compile_int32_power2_div(jit_value_location first, int32_t second, jit_value_location to, const ir_data_flow_pair& data);
+    void compile_int32_div(jit_value_location first, int32_t second, jit_value_location to, const ir_data_flow_pair& data);
     void compile_double_bin_op(const std::shared_ptr<ir_bin_op_insruction>& instruction);
-    void compile_bin_op(const std::shared_ptr<ir_bin_op_insruction>& instruction);
+    void compile_bin_op(const std::shared_ptr<ir_bin_op_insruction>& instruction, const ir_data_flow_pair& data);
     jit_value_location get_location(const ir_variable& var);
     bool has_actual_phi_assigns(const ir_basic_block& block, const ir_label& from);
+    jit_register64 get_temp_register(const ir_data_flow_pair& data, const ir_storage_type& storage,
+                                     const jit_register64& preferred = jit_register64::no_register,
+                                     const std::vector<jit_register64>& occupied = {});
     const uint8_t* compile_ssa();
     void calculate_color_preferences();
     void color_variables();

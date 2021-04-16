@@ -292,6 +292,7 @@ void code_builder::instr_rexw_r_in_opcode_imm32(jit_value_location r, uint8_t op
 }
 
 void code_builder::mov(jit_value_location from, jit_value_location to) {
+    assert(from != to)
     log(cout << "    mov " << to << ", " << from << endl;)
     instr_rexw_rm_r(to, from, 0x89);
 }

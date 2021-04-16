@@ -3,7 +3,7 @@
 
 using namespace std;
 
-void ir_compiler::compile_int32_power2_div(jit_value_location first, int32_t second, jit_value_location to) {
+void ir_compiler::compile_int32_power2_div(jit_value_location first, int32_t second, jit_value_location to, const ir_data_flow_pair& data) {
     auto abs_second = abs(second);
     auto power = __builtin_ctz(abs_second);
     // TODO allocate temp register
@@ -59,9 +59,9 @@ pair<int, int> find_magic(int32_t d) {
     return make_pair(magic, shift);
 }
 
-void ir_compiler::compile_int32_div(jit_value_location first, int32_t second, jit_value_location to) {
+void ir_compiler::compile_int32_div(jit_value_location first, int32_t second, jit_value_location to, const ir_data_flow_pair& data) {
     if (__builtin_popcount(abs(second)) == 1) {
-        compile_int32_power2_div(first, second, to);
+        compile_int32_power2_div(first, second, to, data);
         return;
     }
 
@@ -69,7 +69,6 @@ void ir_compiler::compile_int32_div(jit_value_location first, int32_t second, ji
     bool magic_overflow = magic > 0 != second > 0;
 
     auto to64 = jit_value_location(to.reg, 64);
-    auto r11d = jit_value_location(r11, 32);
 
     builder.movsx(first, to64);
     builder.imul(to64, magic, to64);
@@ -85,10 +84,14 @@ void ir_compiler::compile_int32_div(jit_value_location first, int32_t second, ji
     }
     // TODO allocate temp register or check liveness of first after this instruction
     if (second > 0) {
-        builder.mov(first, r11d);
+        auto temp = jit_value_location(get_temp_register(data, ir_storage_type::ir_int, first.reg), 32);
+        if (first.reg != temp.reg) builder.mov(first, temp);
+        builder.shr(temp, 31);
+        builder.add(temp, to);
     } else {
-        builder.mov(to, r11d);
+        auto temp = jit_value_location(get_temp_register(data, ir_storage_type::ir_int), 32);
+        builder.mov(to, temp);
+        builder.shr(temp, 31);
+        builder.add(temp, to);
     }
-    builder.shr(r11d, 31);
-    builder.add(r11d, to);
 }

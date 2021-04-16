@@ -115,7 +115,7 @@ void ir_compiler::compile_double_bin_op(const std::shared_ptr<ir_bin_op_insructi
     }
 }
 
-void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruction) {
+void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruction, const ir_data_flow_pair& data) {
     if (instruction->first.mode == ir_value_mode::float64 ||
         (instruction->first.mode == ir_value_mode::var &&
          get_storage_type(instruction->first.var.type) == ir_storage_type::ir_float)) {
@@ -222,7 +222,7 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
 
                     // TODO implement ir_value_mode::int32
                     if (op == ir_bin_op::div && first_value.var.type == ir_variable_type::ir_int) {
-                        compile_int32_div(first, static_cast<int32_t>(value), to);
+                        compile_int32_div(first, static_cast<int32_t>(value), to, data);
                         break;
                     }
 
