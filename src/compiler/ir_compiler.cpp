@@ -610,21 +610,24 @@ void ir_compiler::optimize() {
 void ir_compiler::compile_phi_dfs(const jit_value_location& start, int version,
                                   const unordered_map<jit_value_location, vector<jit_value_location>>& assign_from_map,
                                   unordered_map<jit_value_location, int>& visited_version,
-                                  unordered_map<jit_value_location, jit_value_location>& temp) {
+                                  unordered_map<jit_value_location, jit_value_location>& temp,
+                                  const ir_data_flow_pair& data) {
     auto iter = visited_version.find(start);
     if (iter != visited_version.end()) {
         auto found_version = iter->second;
         if (found_version != version) return;
-        // loop detected, TODO properly allocate a temp register
-        compile_assign(start, r11);
-        temp[start] = r11;
+        // loop detected
+        auto storage = get_storage_type(start);
+        auto temp_reg = get_temp_register(data, storage);
+        compile_assign(start, temp_reg);
+        temp[start] = temp_reg;
         return;
     }
     visited_version[start] = version;
     auto to_iter = assign_from_map.find(start);
     if (to_iter == assign_from_map.end()) return;
     for (const auto& to : to_iter->second) {
-        compile_phi_dfs(to, version, assign_from_map, visited_version, temp);
+        compile_phi_dfs(to, version, assign_from_map, visited_version, temp, data);
         auto temp_iter = temp.find(start);
         if (temp_iter != temp.end()) {
             compile_assign(temp_iter->second, to);
@@ -667,7 +670,9 @@ void ir_compiler::compile_phi_before_jump(const ir_label& current_label, const i
     unordered_map<jit_value_location, jit_value_location> temp;
     for (const auto& from : assign_order) {
         temp.clear();
-        compile_phi_dfs(from, version, assign_from_map, visited_version, temp);
+        const auto& data_in = target_block->ir()[0].second;
+        // TODO set proper data here
+        compile_phi_dfs(from, version, assign_from_map, visited_version, temp, ir_data_flow_pair(data_in, data_in));
         version++;
     }
     for (const auto& [to, value] : not_var_assign_list) {

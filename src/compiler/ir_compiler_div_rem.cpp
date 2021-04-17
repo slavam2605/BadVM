@@ -6,12 +6,11 @@ using namespace std;
 void ir_compiler::compile_int32_power2_div(jit_value_location first, int32_t second, jit_value_location to, const ir_data_flow_pair& data) {
     auto abs_second = abs(second);
     auto power = __builtin_ctz(abs_second);
-    // TODO allocate temp register
     assert(first.reg != no_register)
     jit_value_location temp = first;
     if (first.reg == to.reg) {
-        compile_assign(first, jit_value_location(r11, first.bit_size));
-        temp = jit_value_location(r11, first.bit_size);
+        temp = jit_value_location(get_temp_register(data, ir_storage_type::ir_int), first.bit_size);
+        compile_assign(first, temp);
     }
     compile_assign(first, to);
     builder.add(abs_second - 1, to);
@@ -82,7 +81,6 @@ void ir_compiler::compile_int32_div(jit_value_location first, int32_t second, ji
     if (shift > 0 && magic_overflow) {
         builder.sar(to, shift);
     }
-    // TODO allocate temp register or check liveness of first after this instruction
     if (second > 0) {
         auto temp = jit_value_location(get_temp_register(data, ir_storage_type::ir_int, first.reg), 32);
         if (first.reg != temp.reg) builder.mov(first, temp);

@@ -4,7 +4,7 @@
 
 using namespace std;
 
-void ir_compiler::compile_double_bin_op(const std::shared_ptr<ir_bin_op_insruction>& instruction) {
+void ir_compiler::compile_double_bin_op(const std::shared_ptr<ir_bin_op_insruction>& instruction, const ir_data_flow_pair& data) {
     auto op = instruction->op;
     auto first_value = instruction->first;
     auto second_value = instruction->second;
@@ -36,10 +36,15 @@ void ir_compiler::compile_double_bin_op(const std::shared_ptr<ir_bin_op_insructi
                             if (first == to) {
                                 builder.subsd(second, to);
                             } else if (second == to) {
-                                // TODO implement negate, do another trick, or allocate temp register properly
-                                builder.movsd(to, xmm5);
-                                builder.movsd(first, to);
-                                builder.subsd(xmm5, to);
+                                auto temp = get_temp_register(data, ir_storage_type::ir_float, first.reg);
+                                if (temp == first.reg) {
+                                    builder.subsd(to, temp);
+                                    builder.movsd(temp, to);
+                                } else {
+                                    builder.movsd(to, temp);
+                                    builder.movsd(first, to);
+                                    builder.subsd(temp, to);
+                                }
                             } else {
                                 builder.movsd(first, to);
                                 builder.subsd(second, to);
@@ -119,7 +124,7 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
     if (instruction->first.mode == ir_value_mode::float64 ||
         (instruction->first.mode == ir_value_mode::var &&
          get_storage_type(instruction->first.var.type) == ir_storage_type::ir_float)) {
-        compile_double_bin_op(instruction);
+        compile_double_bin_op(instruction, data);
         return;
     }
 
@@ -204,13 +209,13 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
                             break;
                         }
                         case ir_bin_op::cmp: {
-                            // TODO allocate temp registers
+                            auto temp = get_temp_register(data, ir_storage_type::ir_int);
                             builder.cmp(first, second);
                             builder.mov(0, to);
-                            builder.mov(1, r11);
-                            builder.cmovg(r11, to);
-                            builder.mov(-1, r11);
-                            builder.cmovl(r11, to);
+                            builder.mov(1, temp);
+                            builder.cmovg(temp, to);
+                            builder.mov(-1, temp);
+                            builder.cmovl(temp, to);
                             break;
                         }
                         default_fail
@@ -276,9 +281,9 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
                                 builder.mov(value, to);
                                 builder.imul(first, to);
                             } else {
-                                // TODO allocate temp register
-                                builder.mov(value, r11);
-                                builder.imul(r11, to);
+                                auto temp = get_temp_register(data, ir_storage_type::ir_int);
+                                builder.mov(value, temp);
+                                builder.imul(temp, to);
                             }
                             break;
                         }
