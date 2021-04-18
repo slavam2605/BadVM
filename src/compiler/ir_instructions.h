@@ -91,7 +91,7 @@ struct ir_instruction {
 
     ir_instruction(const ir_instruction_tag tag) : tag(tag) {}
     virtual std::shared_ptr<ir_instruction> clone() const = 0;
-    virtual std::vector<ir_label> get_jump_labels() const { return {}; }
+    virtual std::vector<ir_label*> get_jump_labels() { return {}; }
     virtual bool exit_function() const { return false; }
     virtual std::vector<ir_value*> get_in_values() { return {}; }
     virtual std::vector<ir_variable*> get_out_variables() { return {}; };
@@ -172,7 +172,7 @@ struct ir_cmp_jump_instruction : ir_instruction {
     std::shared_ptr<ir_instruction> clone() const override {
         return std::make_shared<ir_cmp_jump_instruction>(first, second, mode, label_true, label_false, nan_mode);
     }
-    std::vector<ir_label> get_jump_labels() const override { return {label_true, label_false}; }
+    std::vector<ir_label*> get_jump_labels() override { return {&label_true, &label_false}; }
     std::vector<ir_value*> get_in_values() override { return {&first, &second}; }
 };
 
@@ -202,7 +202,7 @@ struct ir_jump_instruction : ir_instruction {
         return std::make_shared<ir_jump_instruction>(label);
     }
     ir_jump_instruction(const ir_label& label) : ir_instruction(ir_instruction_tag::jump), label(label) {}
-    std::vector<ir_label> get_jump_labels() const override { return {label}; }
+    std::vector<ir_label*> get_jump_labels() override { return {&label}; }
 };
 
 struct ir_ret_instruction : ir_instruction {

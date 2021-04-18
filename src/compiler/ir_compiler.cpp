@@ -134,8 +134,8 @@ void ir_compiler::build_control_flow_graph() {
         block_map[block.label] = &block;
         const auto& [last_instruction, _] = block.ir().back();
         for (const auto& target_label : last_instruction->get_jump_labels()) {
-            control_flow_in[target_label].push_back(block.label);
-            control_flow_out[block.label].push_back(target_label);
+            control_flow_in[*target_label].push_back(block.label);
+            control_flow_out[block.label].push_back(*target_label);
         }
     }
 }
@@ -181,7 +181,7 @@ void ir_compiler::convert_to_ssa() {
             }
             assert(!jump_labels.empty() || item->exit_function())
             for (const auto& target_label : jump_labels) {
-                control_flow[target_label].push_back(block.label);
+                control_flow[*target_label].push_back(block.label);
             }
         }
     }
@@ -210,7 +210,7 @@ void ir_compiler::convert_to_ssa() {
         }
         for (const auto& label : block.ir().back().first->get_jump_labels()) {
             for (auto& target_block : blocks) {
-                if (target_block.label != label) continue;
+                if (target_block.label != *label) continue;
                 for (const auto& [instruction, _] : target_block.ir()) {
                     if (instruction->tag != ir_instruction_tag::phi) continue;
                     auto phi_instruction = static_pointer_cast<ir_phi_instruction>(instruction);
@@ -399,21 +399,66 @@ bool simplify_instructions(vector<ir_basic_block>& blocks) {
 }
 
 bool remove_unused_blocks(vector<ir_basic_block>& blocks) {
+    bool changed = false;
+
+    unordered_map<ir_label, ir_label> label_replace;
+    unordered_map<ir_label, vector<ir_label>> jump_source;
+    for (const auto& block : blocks) {
+        if (block.label.id == 0) continue;
+        if (block.ir().size() != 1) continue;
+        const auto& [item, _] = block.ir()[0];
+        if (item->tag != ir_instruction_tag::jump) continue;
+        auto instruction = static_pointer_cast<ir_jump_instruction>(item);
+        label_replace[block.label] = instruction->label;
+        changed = true;
+    }
+    for (auto& block : blocks) {
+        for (const auto& [item, _] : block.ir()) {
+            for (auto label : item->get_jump_labels()) {
+                auto iter = label_replace.find(*label);
+                if (iter == label_replace.end()) continue;
+                jump_source[*label].push_back(block.label);
+                *label = iter->second;
+            }
+        }
+    }
+    for (auto& block : blocks) {
+        for (const auto& [item, _] : block.ir()) {
+            if (item->tag == ir_instruction_tag::phi) {
+                auto instruction = static_pointer_cast<ir_phi_instruction>(item);
+                unordered_map<ir_label, ir_value> old_values;
+                for (auto& [label, value] : instruction->edges) {
+                    auto iter = label_replace.find(label);
+                    if (iter == label_replace.end()) continue;
+                    old_values.insert_or_assign(label, value);
+                }
+                auto new_end = remove_if(instruction->edges.begin(), instruction->edges.end(), [&](const auto& pair) {
+                    return label_replace.find(pair.first) != label_replace.end();
+                });
+                instruction->edges.erase(new_end, instruction->edges.end());
+                for (const auto& [label, value] : old_values) {
+                    for (const auto& new_source : jump_source[label]) {
+                        instruction->edges.emplace_back(new_source, value);
+                    }
+                }
+            }
+        }
+    }
+
     unordered_set<ir_label> used_labels;
     used_labels.insert(ir_label(0)); // root block
     for (const auto& block : blocks) {
         for (const auto& label : block.ir().back().first->get_jump_labels()) {
-            used_labels.insert(label);
+            used_labels.insert(*label);
         }
     }
     auto new_end = remove_if(blocks.begin(), blocks.end(), [&](const auto& block){
         return used_labels.find(block.label) == used_labels.end();
     });
-    if (new_end == blocks.end())
-        return false;
-
+    if (new_end != blocks.end()) changed = true;
     blocks.erase(new_end, blocks.end());
-    return true;
+
+    return changed;
 }
 
 bool combine_compare_jump(vector<ir_basic_block>& blocks) {
@@ -455,7 +500,7 @@ optional<ir_label> find_while_end(unordered_map<ir_label, ir_basic_block*>& bloc
         return label;
     }
     for (const auto& jump_label : last->get_jump_labels()) {
-        auto result = find_while_end(block_map, visited, jump_label, while_start);
+        auto result = find_while_end(block_map, visited, *jump_label, while_start);
         if (result.has_value()) return result;
     }
     visited.erase(label);
@@ -470,10 +515,10 @@ optional<tuple<ir_label, ir_label, ir_label>> find_while_loop(unordered_map<ir_l
     auto& [last, _] = block->ir().back();
     for (const auto& jump_label : last->get_jump_labels()) {
         if (last->tag == ir_instruction_tag::cmp_jump) {
-            auto result = find_while_end(block_map, visited, jump_label, label);
-            if (result.has_value()) return make_tuple(label, jump_label, *result);
+            auto result = find_while_end(block_map, visited, *jump_label, label);
+            if (result.has_value()) return make_tuple(label, *jump_label, *result);
         }
-        auto result = find_while_loop(block_map, visited, jump_label);
+        auto result = find_while_loop(block_map, visited, *jump_label);
         if (result.has_value()) return result;
     }
     return nullopt;
@@ -494,8 +539,8 @@ void rename_variables(unordered_map<ir_label, ir_basic_block*>& block_map, unord
     }
     auto& last = block->ir().back();
     for (const auto& jump_label : last.first->get_jump_labels()) {
-        if (jump_label == ignore_label) continue;
-        rename_variables(block_map, visited, rename_map, jump_label, ignore_label);
+        if (*jump_label == ignore_label) continue;
+        rename_variables(block_map, visited, rename_map, *jump_label, ignore_label);
     }
 }
 
@@ -513,7 +558,7 @@ bool ir_compiler::inverse_loops() {
     for (auto& block : blocks) {
         if (block.label == while_start) continue;
         for (const auto& jump_label : block.ir().back().first->get_jump_labels()) {
-            if (jump_label == loop_first) return false;
+            if (*jump_label == loop_first) return false;
         }
     }
 
@@ -581,8 +626,8 @@ bool ir_compiler::inverse_loops() {
     rename_variables(temp_block_map, visited, rename_map, while_start, loop_first);
     ir_label after_label;
     for (const auto& jump_label : while_start_block->ir().back().first->get_jump_labels()) {
-        if (jump_label == loop_first) continue;
-        after_label = jump_label;
+        if (*jump_label == loop_first) continue;
+        after_label = *jump_label;
         break;
     }
     assert(after_label.id >= 0)
