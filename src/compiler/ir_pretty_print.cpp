@@ -115,8 +115,8 @@ ostream& operator<<(ostream& stream, const shared_ptr<ir_instruction>& item) {
 
 void ir_compiler::pretty_print(ostream& stream) {
     cout << "---- Converted IR code ----" << endl;
-    for (int ir_offset = 0; ir_offset < ir.size(); ir_offset++) {
-        const auto& item = ir[ir_offset];
+    for (int ir_offset = 0; ir_offset < non_ssa_ir.size(); ir_offset++) {
+        const auto& item = non_ssa_ir[ir_offset];
         auto label_iter = offset_to_label.find(ir_offset);
         if (label_iter != offset_to_label.end()) {
             stream << "L" << label_iter->second.id << ":" << endl;

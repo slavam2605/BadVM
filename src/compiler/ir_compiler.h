@@ -44,6 +44,7 @@ struct ir_basic_block {
         });
         if (new_end == _ir.end()) return false;
         _ir.erase(new_end, _ir.end());
+        data_flow_valid = false;
         return true;
     }
 
@@ -69,7 +70,7 @@ struct ir_basic_block {
 class ir_compiler {
     code_manager& manager;
     code_builder builder;
-    std::vector<std::shared_ptr<ir_instruction>> ir;
+    std::vector<std::shared_ptr<ir_instruction>> non_ssa_ir;
     std::unordered_map<int, int> last_var_version;
     std::unordered_map<int, ir_label> offset_to_label;
     int last_label_id = 0;

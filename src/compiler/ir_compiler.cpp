@@ -52,7 +52,7 @@ void ir_basic_block::push_back(const std::shared_ptr<ir_instruction>& instructio
 }
 
 int ir_compiler::ir_offset() const {
-    return ir.size();
+    return non_ssa_ir.size();
 }
 
 ir_label ir_compiler::create_label() {
@@ -146,7 +146,7 @@ void ir_compiler::convert_to_ssa() {
     blocks.push_back(ir_basic_block(root));
 
     ir_label current_label = root;
-    for (int ir_offset = 0; ir_offset < ir.size(); ir_offset++) {
+    for (int ir_offset = 0; ir_offset < non_ssa_ir.size(); ir_offset++) {
         auto label_iter = offset_to_label.find(ir_offset);
         if (label_iter != offset_to_label.end()) {
             auto& block = blocks.back();
@@ -159,7 +159,7 @@ void ir_compiler::convert_to_ssa() {
 
         auto& block = blocks.back();
         assert(block.label == current_label)
-        block.push_back(ir[ir_offset]);
+        block.push_back(non_ssa_ir[ir_offset]);
     }
 
     unordered_map<int, ir_variable_type> all_var_ids;
@@ -225,24 +225,63 @@ void ir_compiler::convert_to_ssa() {
     }
 }
 
+bool find_used_dfs(const unordered_set<ir_variable>& useful, const unordered_set<ir_variable>& unused,
+                   const unordered_map<ir_variable, unordered_set<ir_variable>>& affected,
+                   unordered_set<ir_variable>& visited, const ir_variable& var) {
+    if (visited.find(var) != visited.end()) return false;
+    if (unused.find(var) != unused.end()) return false;
+    if (useful.find(var) != useful.end()) return true;
+    visited.insert(var);
+    auto iter = affected.find(var);
+    if (iter == affected.end()) return false;
+    for (const auto& affected_var : iter->second) {
+        if (find_used_dfs(useful, unused, affected, visited, affected_var))
+            return true;
+    }
+    return false;
+}
+
 bool remove_unused_vars(vector<ir_basic_block>& blocks) {
     bool changed = false;
-    unordered_set<ir_variable> used_vars;
+    unordered_map<ir_variable, unordered_set<ir_variable>> affected;
+    unordered_set<ir_variable> useful;
+    unordered_set<ir_variable> assigned;
     for (const auto& block : blocks) {
         for (const auto& [instruction, _] : block.ir()) {
+            auto out_vars = instruction->get_out_variables();
+            auto useful_instruction = !instruction->is_pure() || out_vars.empty();
+            for (const auto& var : out_vars) {
+                assigned.insert(*var);
+            }
             for (const auto& value : instruction->get_in_values()) {
                 if (value->mode != ir_value_mode::var) continue;
-                used_vars.insert(value->var);
+                if (useful_instruction) {
+                    useful.insert(value->var);
+                    continue;
+                }
+                for (auto out_var : out_vars) {
+                    affected[value->var].insert(*out_var);
+                }
             }
         }
     }
+
+    unordered_set<ir_variable> visited;
+    unordered_set<ir_variable> unused;
+    for (const auto& var : assigned) {
+        visited.clear();
+        if (!find_used_dfs(useful, unused, affected, visited, var))
+            unused.insert(var);
+    }
+
     for (auto& block : blocks) {
         auto erased = block.erase_if([&](const auto& instr) {
             if (!instr->is_pure()) return false;
             auto out_vars = instr->get_out_variables();
             if (out_vars.empty()) return false;
             for (const auto var : out_vars) {
-                if (used_vars.find(*var) != used_vars.end()) return false;
+                if (unused.find(*var) == unused.end())
+                    return false;
             }
             return true;
         });

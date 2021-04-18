@@ -102,7 +102,7 @@ void ir_compiler::color_variables() {
                     state.insert(value->var);
                 }
             },
-            [](auto& state, const auto& current_block, const auto& succ_block, const auto& in_state) {
+            [](auto& state, const ir_basic_block& current_block, const ir_basic_block& succ_block, const auto& in_state) {
                 state.insert(in_state.begin(), in_state.end());
                 for (const auto& [item, _] : succ_block.ir()) {
                     if (item->tag != ir_instruction_tag::phi) break;
