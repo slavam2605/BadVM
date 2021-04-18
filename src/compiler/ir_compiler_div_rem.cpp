@@ -58,7 +58,7 @@ pair<int, int> find_magic(int32_t d) {
     return make_pair(magic, shift);
 }
 
-void ir_compiler::compile_int32_div(jit_value_location first, int32_t second, jit_value_location to, const ir_data_flow_pair& data) {
+void ir_compiler::compile_int32_div_const(jit_value_location first, int32_t second, jit_value_location to, const ir_data_flow_pair& data) {
     if (__builtin_popcount(abs(second)) == 1) {
         compile_int32_power2_div(first, second, to, data);
         return;
@@ -91,5 +91,43 @@ void ir_compiler::compile_int32_div(jit_value_location first, int32_t second, ji
         builder.mov(to, temp);
         builder.shr(temp, 31);
         builder.add(temp, to);
+    }
+}
+
+void ir_compiler::compile_int_rem(jit_value_location first, jit_value_location second, jit_value_location to, const ir_data_flow_pair& data) {
+    auto bit_size = first.bit_size;
+    auto rax_loc = jit_value_location(rax, bit_size);
+    auto rdx_loc = jit_value_location(rdx, bit_size);
+    bool rax_live = get_temp_register(data, ir_storage_type::ir_int, rax) != rax;
+    bool rdx_live = get_temp_register(data, ir_storage_type::ir_int, rdx) != rdx;
+
+    auto temp_second = second;
+    jit_register64 temp1 = no_register, temp2 = no_register;
+    if (rdx_live && to.reg != rdx) {
+        temp1 = get_temp_register(data, ir_storage_type::ir_int, no_register, {rax, rdx, first.reg, second.reg});
+        builder.mov(rdx, temp1);
+    }
+    if (rax_live && to.reg != rax) {
+        temp2 = get_temp_register(data, ir_storage_type::ir_int, no_register, {rax, rdx, first.reg, second.reg, temp1});
+        builder.mov(rax, temp2);
+    }
+    if (second.reg == rdx && temp1 != no_register) {
+        temp_second = jit_value_location(temp1, bit_size);
+    } else if (second.reg == rax && temp2 != no_register) {
+        temp_second = jit_value_location(temp2, bit_size);
+    } else if (second.reg == to.reg) {
+        auto temp_reg = get_temp_register(data, ir_storage_type::ir_int, no_register, {rax, rdx, first.reg, second.reg, temp1, temp2});
+        temp_second = jit_value_location(temp_reg, bit_size);
+        compile_assign(second, temp_second);
+    }
+    compile_assign(first, rax_loc);
+    builder.cqo();
+    builder.idiv(temp_second);
+    compile_assign(rdx_loc, to);
+    if (temp1 != no_register) {
+        builder.mov(temp1, rdx);
+    }
+    if (temp2 != no_register) {
+        builder.mov(temp2, rax);
     }
 }

@@ -188,24 +188,7 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
                             break;
                         }
                         case ir_bin_op::rem: {
-                            // TODO allocate temp registers
-                            if (to.reg != rdx || second.reg == rdx) {
-                                builder.mov(rdx, r11);
-                            }
-                            if (to.reg != rax || second.reg == rax) {
-                                builder.mov(rax, r10);
-                            }
-                            // TODO movsx for int32
-                            compile_assign(first, rax);
-                            builder.cqo();
-                            builder.idiv(second == rax ? r10 : (second == rdx ? r11 : second));
-                            compile_assign(rdx, to);
-                            if (to.reg != rax) {
-                                builder.mov(r10, rax);
-                            }
-                            if (to.reg != rdx) {
-                                builder.mov(r11, rdx);
-                            }
+                            compile_int_rem(first, second, to, data);
                             break;
                         }
                         case ir_bin_op::cmp: {
@@ -227,7 +210,7 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
 
                     // TODO implement ir_value_mode::int32
                     if (op == ir_bin_op::div && first_value.var.type == ir_variable_type::ir_int) {
-                        compile_int32_div(first, static_cast<int32_t>(value), to, data);
+                        compile_int32_div_const(first, static_cast<int32_t>(value), to, data);
                         break;
                     }
 

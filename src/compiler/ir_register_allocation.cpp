@@ -188,6 +188,7 @@ void ir_compiler::color_variables() {
     }
 
     for (const auto& [var, pref_set] : reg_preference) {
+        if (color[var] != 0) continue;
         auto storage = get_storage_type(var.type);
         if (storage != ir_storage_type::ir_int) assert(false)
         unordered_set<int> used_colors;

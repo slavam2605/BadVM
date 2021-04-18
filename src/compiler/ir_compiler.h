@@ -101,7 +101,8 @@ public:
                          const ir_data_flow_pair& data);
     void compile_phi_before_jump(const ir_label& current_label, const ir_basic_block* target_block);
     void compile_int32_power2_div(jit_value_location first, int32_t second, jit_value_location to, const ir_data_flow_pair& data);
-    void compile_int32_div(jit_value_location first, int32_t second, jit_value_location to, const ir_data_flow_pair& data);
+    void compile_int32_div_const(jit_value_location first, int32_t second, jit_value_location to, const ir_data_flow_pair& data);
+    void compile_int_rem(jit_value_location first, jit_value_location second, jit_value_location to, const ir_data_flow_pair& data);
     void compile_double_bin_op(const std::shared_ptr<ir_bin_op_insruction>& instruction, const ir_data_flow_pair& data);
     void compile_bin_op(const std::shared_ptr<ir_bin_op_insruction>& instruction, const ir_data_flow_pair& data);
     jit_value_location get_location(const ir_variable& var);
