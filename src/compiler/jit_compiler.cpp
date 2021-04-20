@@ -89,14 +89,16 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
     }
 
     unordered_map<int, int> bytecode_offset_to_ir;
-    unordered_map<int, ir_label> pending_labels;
+    unordered_map<int, unordered_set<ir_label>> pending_labels;
     const uint8_t* code = code_info->code;
     uint32_t offset = 0;
     while (offset < code_info->code_length) {
         bytecode_offset_to_ir[offset] = ir.ir_offset();
         auto label_iter = pending_labels.find(offset);
         if (label_iter != pending_labels.end()) {
-            ir.add_label(label_iter->second, ir.ir_offset());
+            for (const auto& label : label_iter->second) {
+                ir.add_label(label, ir.ir_offset());
+            }
             pending_labels.erase(offset);
         }
 
@@ -311,7 +313,7 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
                 if (iter != bytecode_offset_to_ir.end()) {
                     ir.add_label(label_true, iter->second);
                 } else {
-                    pending_labels.insert_or_assign(target_offset, label_true);
+                    pending_labels[target_offset].insert(label_true);
                 }
                 ir_cmp_mode cmp_mode;
                 switch (code[offset]) {
@@ -345,7 +347,7 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
                 if (iter != bytecode_offset_to_ir.end()) {
                     ir.add_label(label_true, iter->second);
                 } else {
-                    pending_labels.insert_or_assign(target_offset, label_true);
+                    pending_labels[target_offset].insert(label_true);
                 }
                 ir_cmp_mode cmp_mode;
                 switch (code[offset]) {
@@ -372,7 +374,7 @@ const void* jit_compiler::compile(const class_file* current_class, const method_
                 if (iter != bytecode_offset_to_ir.end()) {
                     ir.add_label(label_true, iter->second);
                 } else {
-                    pending_labels.insert_or_assign(target_offset, label_true);
+                    pending_labels[target_offset].insert(label_true);
                 }
                 ir.jump(label_true);
                 offset += 2;

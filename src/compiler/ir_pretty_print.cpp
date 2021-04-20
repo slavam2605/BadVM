@@ -120,6 +120,10 @@ void ir_compiler::pretty_print(ostream& stream) {
         auto label_iter = offset_to_label.find(ir_offset);
         if (label_iter != offset_to_label.end()) {
             stream << "L" << label_iter->second.id << ":" << endl;
+            for (const auto& [label_element, canonical_label] : canonical_label_map) {
+                if (canonical_label != label_iter->second) continue;
+                stream << "L" << label_element.id << ":" << endl;
+            }
         }
         stream << item;
     }

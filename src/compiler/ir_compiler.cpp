@@ -60,7 +60,12 @@ ir_label ir_compiler::create_label() {
 }
 
 void ir_compiler::add_label(ir_label label, int ir_offset) {
-    offset_to_label.insert_or_assign(ir_offset, label);
+    auto iter = offset_to_label.find(ir_offset);
+    if (iter == offset_to_label.end()) {
+        offset_to_label[ir_offset] = label;
+    } else {
+        canonical_label_map[label] = iter->second;
+    }
 }
 
 ir_storage_type get_storage_type(const jit_value_location& loc) {
@@ -147,6 +152,12 @@ void ir_compiler::convert_to_ssa() {
 
     ir_label current_label = root;
     for (int ir_offset = 0; ir_offset < non_ssa_ir.size(); ir_offset++) {
+        for (auto jump_label : non_ssa_ir[ir_offset]->get_jump_labels()) {
+            auto iter = canonical_label_map.find(*jump_label);
+            if (iter == canonical_label_map.end()) continue;
+            *jump_label = iter->second;
+        }
+
         auto label_iter = offset_to_label.find(ir_offset);
         if (label_iter != offset_to_label.end()) {
             auto& block = blocks.back();

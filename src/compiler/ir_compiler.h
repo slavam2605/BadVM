@@ -73,6 +73,7 @@ class ir_compiler {
     std::vector<std::shared_ptr<ir_instruction>> non_ssa_ir;
     std::unordered_map<int, int> last_var_version;
     std::unordered_map<int, ir_label> offset_to_label;
+    std::unordered_map<ir_label, ir_label> canonical_label_map;
     int last_label_id = 0;
     std::unordered_map<ir_label, std::vector<ir_label>> control_flow_in;
     std::unordered_map<ir_label, std::vector<ir_label>> control_flow_out;
