@@ -342,9 +342,32 @@ bool eliminate_trivial_phi(vector<ir_basic_block>& blocks) {
 
 bool simplify_instructions(vector<ir_basic_block>& blocks) {
     bool changed = false;
+    unordered_map<ir_label, unordered_set<ir_label>> reversed_control_flow;
+    for (const auto& block : blocks) {
+        for (const auto label : block.ir().back().first->get_jump_labels()) {
+            reversed_control_flow[*label].insert(block.label);
+        }
+    }
+
     for (auto& block : blocks) {
         for (int i = 0; i < block.ir().size(); i++) {
             const auto& [item, _] = block.ir()[i];
+            switch (item->tag) {
+                case ir_instruction_tag::phi: {
+                    auto instruction = static_pointer_cast<ir_phi_instruction>(item);
+                    vector<pair<ir_label, ir_value>> new_edges;
+                    for (const auto& [label, value] : instruction->edges) {
+                        if (reversed_control_flow[block.label].find(label) == reversed_control_flow[block.label].end()) continue;
+                        new_edges.emplace_back(label, value);
+                    }
+                    if (new_edges.size() == instruction->edges.size()) break;
+                    instruction->edges = new_edges;
+                    changed = true;
+                    break;
+                }
+                default: break;
+            }
+
             for (const auto& item : item->get_in_values()) {
                 if (item->mode != ir_value_mode::int64) goto ir_loop_end;
             }
@@ -401,6 +424,11 @@ bool simplify_instructions(vector<ir_basic_block>& blocks) {
 bool remove_unused_blocks(vector<ir_basic_block>& blocks) {
     bool changed = false;
 
+    unordered_map<ir_label, const ir_basic_block*> block_map;
+    for (const auto& block : blocks) {
+        block_map[block.label] = &block;
+    }
+
     unordered_map<ir_label, ir_label> label_replace;
     unordered_map<ir_label, vector<ir_label>> jump_source;
     for (const auto& block : blocks) {
@@ -409,6 +437,7 @@ bool remove_unused_blocks(vector<ir_basic_block>& blocks) {
         const auto& [item, _] = block.ir()[0];
         if (item->tag != ir_instruction_tag::jump) continue;
         auto instruction = static_pointer_cast<ir_jump_instruction>(item);
+        if (block_map[instruction->label]->ir()[0].first->tag == ir_instruction_tag::phi) continue;
         label_replace[block.label] = instruction->label;
         changed = true;
     }
