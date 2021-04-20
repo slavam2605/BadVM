@@ -731,7 +731,7 @@ void ir_compiler::compile_phi_dfs(const jit_value_location& start, int version,
         if (found_version != version) return;
         // loop detected
         auto storage = get_storage_type(start);
-        auto temp_reg = get_temp_register(data, storage);
+        auto temp_reg = jit_value_location(get_temp_register(data, storage), start.bit_size);
         compile_assign(start, temp_reg);
         temp[start] = temp_reg;
         return;
