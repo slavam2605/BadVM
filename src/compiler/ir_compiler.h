@@ -91,6 +91,7 @@ public:
     int ir_offset() const;
     ir_label create_label();
     void add_label(ir_label label, int ir_offset);
+    ir_label create_new_block(const ir_label& position, const ir_label& goto_block);
     void pretty_print(std::ostream& stream);
     void pretty_print(std::ostream& stream, const ir_basic_block& block);
     void compile_assign(const ir_value& from_value, const jit_value_location& to);
