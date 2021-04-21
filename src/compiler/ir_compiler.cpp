@@ -18,7 +18,7 @@ namespace std {
 }
 
 ir_compiler::ir_compiler(code_manager& manager)
-        : manager(manager), int_reg_list{no_register, rax, rcx, rdx, r8, r9/*, r10, r11*/},
+        : manager(manager), int_reg_list{no_register, rax, rcx, rdx, r8, r9, r10, r11},
           float_reg_list{no_register, xmm0, xmm1, xmm2, xmm3, xmm4, xmm5} {}
 
 ir_basic_block::ir_basic_block(const ir_label& label) : label(label) {

@@ -299,11 +299,13 @@ void code_builder::mov(jit_value_location from, jit_value_location to) {
 
 void code_builder::mov(int64_t from, jit_value_location to) {
     log(cout << "    mov " << to << ", " << from << endl;)
+    assert(to.bit_size == 64)
     instr_rexw_r_in_opcode_imm64(to, 0xB8, from);
 }
 
 void code_builder::mov(int32_t from, jit_value_location to) {
     log(cout << "    mov " << to << ", " << from << endl;)
+    assert(to.bit_size == 32)
     instr_rexw_r_in_opcode_imm32(to, 0xB8, from);
 }
 

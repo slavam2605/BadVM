@@ -215,29 +215,9 @@ void ir_compiler::compile_bin_op(const shared_ptr<ir_bin_op_insruction>& instruc
                     }
 
                     if (op == ir_bin_op::rem) {
-                        // TODO replace idiv with a bit hack and imul
-                        // TODO allocate temp register
-                        jit_register64 temp = r11;
-                        if (to.reg != rdx) {
-                            builder.mov(rdx, r11);
-                            temp = r10;
-                        }
-                        if (to.reg != rax) {
-                            builder.mov(rax, r10);
-                            assert(temp != r10) // TODO can't allocate one more temp register
-                        }
-                        // TODO movsx for int32
-                        compile_assign(first, rax);
-                        builder.cqo();
-                        builder.mov(value, temp);
-                        builder.idiv(temp);
-                        compile_assign(rdx, to);
-                        if (to.reg != rax) {
-                            builder.mov(r10, rax);
-                        }
-                        if (to.reg != rdx) {
-                            builder.mov(r11, rdx);
-                        }
+                        auto temp = jit_value_location(get_temp_register(data, ir_storage_type::ir_int), first.bit_size);
+                        builder.mov(static_cast<int32_t>(value), temp);
+                        compile_int_rem(first, temp, to, data);
                         break;
                     }
 
